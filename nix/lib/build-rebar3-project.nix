@@ -172,8 +172,10 @@ let
         rebar3 as ${lib.escapeShellArg releaseProfile} release -n ${lib.escapeShellArg r}
       '') outputs.releases}
       ${lib.optionalString (outputs.escripts != [ ]) "rebar3 escriptize\n"}
+      # Each Hex package tarball, without its documentation, which the
+      # project's doc provider would build.
       ${lib.concatMapStrings (p: ''
-        rebar3 hex build --app ${lib.escapeShellArg p.name}
+        rebar3 hex build package --app ${lib.escapeShellArg p.name}
       '') outputs.hexPackages}
       runHook postBuild
     '';
