@@ -1,0 +1,353 @@
+%% SPDX-License-Identifier: MIT
+%%
+%% The lock run. It copies the build to _build/rebar3-purifier/lock-run,
+%% runs rebar3 there with an empty home and cache and with the network,
+%% once per locked profile, and records what rebar3 downloaded and what
+%% the build produces in rebar3-purifier.lock.json.
+-module(rp_lock).
+
+-export([lock/2, repo_url/2, global_config_dir/0, https_url/1]).
+
+-define(DEFAULT_PROFILES, ["default", "test", "prod"]).
+
+lock(Args, Force) ->
+    Root = cwd(),
+    filelib:is_regular(filename:join(Root, "rebar.config")) orelse
+        rp_util:fail("no rebar.config in ~ts", [Root]),
+    Profiles = lists:usort(?DEFAULT_PROFILES ++ profiles(Args)),
+    LockFile = rp_util:lock_file(Root),
+    case not Force andalso up_to_date(Root, LockFile, Profiles) of
+        true ->
+            io:format("~ts is up to date~n", [LockFile]);
+        false ->
+            write_lock(Root, LockFile, Profiles)
+    end,
+    ok.
+
+profiles(["--profile", P | Rest]) -> [P | profiles(Rest)];
+profiles([]) -> [];
+profiles(Other) -> rp_util:fail("unexpected arguments: ~ts", [lists:join(" ", Other)]).
+
+cwd() ->
+    {ok, Dir} = file:get_cwd(),
+    Dir.
+
+up_to_date(Root, LockFile, Profiles) ->
+    case rp_util:read_lock(LockFile) of
+        {ok, Lock} ->
+            Files = rp_util:definition_files(Root),
+            maps:get(<<"definitionHash">>, Lock) =:= rp_util:definition_hash(Root, Files) andalso
+                maps:get(<<"profiles">>, Lock) =:= [list_to_binary(P) || P <- Profiles];
+        {error, _} ->
+            false
+    end.
+
+write_lock(Root, LockFile, Profiles) ->
+    Work = filename:join([Root, "_build", "rebar3-purifier", "lock-run"]),
+    Project = filename:join(Work, "project"),
+    Cache = filename:join(Work, "cache"),
+    rp_util:rm_rf(Work),
+    rp_util:ensure_dir(Project),
+    copy_project(Root, Project),
+    Env = [
+        {"HOME", filename:join(Work, "home")},
+        {"REBAR_CACHE_DIR", Cache},
+        %% The user's global rebar3 configuration stays in effect, for the
+        %% Hex repositories and credentials it may hold.
+        {"REBAR_GLOBAL_CONFIG_DIR", global_config_dir()}
+    ],
+    lists:foreach(
+        fun(P) ->
+            Args = case P of "default" -> ["compile"]; _ -> ["as", P, "compile"] end,
+            io:format(standard_error, "rebar3-purifier: rebar3 ~ts~n", [lists:join(" ", Args)]),
+            case rp_util:run("rebar3", Args, Project, Env) of
+                {0, _} -> ok;
+                {Status, _} -> rp_util:fail("rebar3 ~ts failed with exit status ~b", [lists:join(" ", Args), Status])
+            end
+        end,
+        Profiles
+    ),
+    update_rebar_lock(Root, Project),
+    Config = rp_util:consult(filename:join(Root, "rebar.config")),
+    Tarballs = hex_entries(Cache, Config),
+    {GitEntries, GitSources} = git_entries(Project),
+    Files = rp_util:definition_files(Root),
+    Lock = #{
+        version => rp_util:lock_version(),
+        rebar3Version => rebar3_version(Project),
+        otpRelease => list_to_binary(erlang:system_info(otp_release)),
+        profiles => [list_to_binary(P) || P <- Profiles],
+        definitionFiles => [list_to_binary(F) || F <- Files],
+        definitionHash => rp_util:definition_hash(Root, Files),
+        artifacts => lists:sort(
+            fun(A, B) -> maps:get(path, A) =< maps:get(path, B) end,
+            Tarballs ++ GitEntries
+        ),
+        gitSources => GitSources,
+        outputs => outputs(Root, Project, Config)
+    },
+    add_private_tarballs(Cache, Tarballs),
+    rp_util:write_json(LockFile, Lock),
+    io:format("wrote ~ts~n", [LockFile]).
+
+copy_project(Root, Project) ->
+    {ok, Names} = file:list_dir_all(Root),
+    lists:foreach(
+        fun(N) ->
+            {0, _} = rp_util:run_quiet("cp", ["-a", filename:join(Root, N), Project], Root, [])
+        end,
+        [N || N <- Names, N =/= "_build"]
+    ).
+
+%% When the lock run resolved dependencies rebar.lock did not hold, the
+%% build needs that resolution, so it goes back to the project.
+update_rebar_lock(Root, Project) ->
+    New = filename:join(Project, "rebar.lock"),
+    Old = filename:join(Root, "rebar.lock"),
+    case {file:read_file(New), file:read_file(Old)} of
+        {{ok, Same}, {ok, Same}} ->
+            ok;
+        {{ok, Bin}, _} ->
+            ok = file:write_file(Old, Bin),
+            io:format(standard_error, "rebar3-purifier: updated rebar.lock; commit it with the lockfile~n", []);
+        {{error, enoent}, _} ->
+            ok
+    end.
+
+%% The directory rebar3 reads the global configuration under, as it was
+%% before the lock run replaced HOME.
+global_config_dir() ->
+    case os:getenv("REBAR_GLOBAL_CONFIG_DIR") of
+        false ->
+            case os:getenv("HOME") of
+                false -> rp_util:fail("HOME is not set", []);
+                Home -> Home
+            end;
+        Dir ->
+            Dir
+    end.
+
+rebar3_version(Project) ->
+    {0, Out} = rp_util:run_quiet("rebar3", ["version"], Project, []),
+    case re:run(Out, "rebar ([^ \n]+)", [{capture, all_but_first, binary}]) of
+        {match, [V]} -> V;
+        nomatch -> <<"unknown">>
+    end.
+
+%% Hex tarballs
+
+%% A file entry per tarball in the cache: the tarball at its path in the
+%% rebar3 cache, at the tarball URL of its repository.
+hex_entries(Cache, Config) ->
+    HexDir = filename:join(Cache, "hex"),
+    lists:append([
+        [
+            #{
+                path => list_to_binary(filename:join(["hex", Repo, "packages", File])),
+                url => <<(repo_url(Repo, Config))/binary, "/tarballs/", (list_to_binary(File))/binary>>,
+                mirrors => [],
+                hash => rp_util:sri_sha256(element(2, {ok, _} = file:read_file(
+                    filename:join([HexDir, Repo, "packages", File]))))
+            }
+         || File <- lists:sort(filelib:wildcard("*.tar", filename:join([HexDir, Repo, "packages"])))
+        ]
+     || Repo <- lists:sort(filelib:wildcard("*", HexDir)),
+        filelib:is_dir(filename:join([HexDir, Repo, "packages"]))
+    ]).
+
+%% The URL of a Hex repository, as rebar3 would fetch from it: hexpm (or
+%% HEX_CDN, a mirror of it), an organization of hexpm, or a repository the
+%% project's or the user's rebar.config names under `hex`.
+repo_url("hexpm", _) ->
+    case os:getenv("HEX_CDN") of
+        false ->
+            case os:getenv("HEX_MIRROR") of
+                false -> <<"https://repo.hex.pm">>;
+                "" -> <<"https://repo.hex.pm">>;
+                M -> trim_slash(M)
+            end;
+        "" -> <<"https://repo.hex.pm">>;
+        Cdn -> trim_slash(Cdn)
+    end;
+repo_url("hexpm:" ++ Org, Config) ->
+    <<(repo_url("hexpm", Config))/binary, "/repos/", (list_to_binary(Org))/binary>>;
+repo_url(Repo, Config) ->
+    Global = rp_util:consult(filename:join([global_config_dir(), ".config", "rebar3", "rebar.config"])),
+    Name = list_to_binary(Repo),
+    Repos = [R || C <- [Config, Global], R <- hex_repos(C), maps:get(name, R, undefined) =:= Name],
+    case Repos of
+        [#{repo_url := Url} | _] -> trim_slash(Url);
+        _ -> rp_util:fail("the Hex repository ~ts has no repo_url in rebar.config", [Repo])
+    end.
+
+hex_repos(Config) ->
+    Hex = proplists:get_value(hex, Config, []),
+    lists:append([Rs || {repos, Rs} <- Hex] ++ [Rs || {repos, replace, Rs} <- Hex]).
+
+trim_slash(Url) ->
+    string:trim(rp_util:to_bin(Url), trailing, "/").
+
+%% Tarballs from repositories other than hexpm may need credentials, which
+%% Nix's fetcher does not have. The lock run downloaded them with the
+%% user's credentials, so it adds them to the store, where the build finds
+%% them under the same fixed-output path.
+add_private_tarballs(Cache, Tarballs) ->
+    lists:foreach(
+        fun(#{path := Path}) ->
+            File = filename:join(Cache, Path),
+            rp_util:run_quiet("nix-store", ["--add-fixed", "sha256", File], Cache, [])
+        end,
+        [T || T = #{path := P} <- Tarballs, not lists:prefix("hex/hexpm/", binary_to_list(P))]
+    ).
+
+%% Git dependencies
+
+%% A git entry per repository rebar3 cloned, at the commit it checked out.
+%% rebar3 clones a git dependency with its .git directory and checks the
+%% commit and remote URL there, so the entries keep .git. rebar3 does not
+%% check out submodules. An SSH URL is recorded as the HTTPS URL of the
+%% same host, since the Nix sandbox has no SSH keys, and gitSources maps
+%% the URL rebar3 uses to the entry.
+git_entries(Project) ->
+    Dirs = [
+        D
+     || Pattern <- ["_build/*/lib/*", "_build/*/plugins/*"],
+        D <- filelib:wildcard(Pattern, Project),
+        filelib:is_dir(filename:join([Project, D, ".git"]))
+    ],
+    %% A git_subdir dependency is copied out of its clone without .git, so
+    %% rebar.lock is where its repository and commit are.
+    Subdirs = [
+        {Url, Rev, [], []}
+     || {_, {git_subdir, Url, {ref, Rev}, _}, _} <- rebar_lock_deps(Project)
+    ],
+    Repos = lists:usort([git_repo(filename:join(Project, D)) || D <- Dirs] ++ Subdirs),
+    Entries = [
+        git_entry(Url, Rev)
+     || {Url, Rev} <- lists:usort([{https_url(U), R} || {U, R, _, _} <- Repos])
+    ],
+    %% rebar3 clones a branch or a tag with `git clone -b`, so the clone
+    %% it fetches from needs the names it asks for. Each source records the
+    %% tags at its commit and the branch rebar3 checked out.
+    Grouped = maps:groups_from_list(
+        fun({U, R, _, _}) -> {U, R} end,
+        fun({_, _, Tags, Branches}) -> {Tags, Branches} end,
+        Repos
+    ),
+    Sources = [
+        #{
+            url => list_to_binary(U),
+            path => <<"git/", (list_to_binary(R))/binary>>,
+            tags => lists:usort([list_to_binary(T) || {Ts, _} <- Refs, T <- Ts]),
+            branches => lists:usort([list_to_binary(B) || {_, Bs} <- Refs, B <- Bs])
+        }
+     || {U, R} := Refs <- maps:iterator(Grouped, ordered)
+    ],
+    {Entries, Sources}.
+
+%% The dependencies in rebar.lock, in either of its formats.
+rebar_lock_deps(Project) ->
+    case rp_util:consult(filename:join(Project, "rebar.lock")) of
+        [{_Version, Deps} | _] when is_list(Deps) -> Deps;
+        [Deps] when is_list(Deps) -> Deps;
+        _ -> []
+    end.
+
+git_repo(Dir) ->
+    Url = git_line(Dir, ["config", "--get", "remote.origin.url"]),
+    Rev = git_line(Dir, ["rev-parse", "HEAD"]),
+    Tags = string:lexemes(git_out(Dir, ["tag", "--points-at", "HEAD"]), "\n"),
+    Branches = [B || B <- [git_line(Dir, ["rev-parse", "--abbrev-ref", "HEAD"])], B =/= "HEAD"],
+    {Url, Rev, Tags, Branches}.
+
+git_line(Dir, Args) ->
+    string:trim(git_out(Dir, Args)).
+
+git_out(Dir, Args) ->
+    {0, Out} = rp_util:run_quiet("git", Args, Dir, []),
+    binary_to_list(Out).
+
+git_entry(Url, Rev) ->
+    io:format(standard_error, "rebar3-purifier: hashing ~ts at ~ts~n", [Url, Rev]),
+    {ok, Cwd} = file:get_cwd(),
+    case rp_util:run_quiet("nix-prefetch-git",
+                           ["--url", Url, "--rev", Rev, "--leave-dotGit", "--quiet"], Cwd, []) of
+        {0, Out} ->
+            #{<<"hash">> := Hash} = json:decode(Out),
+            #{
+                path => <<"git/", (list_to_binary(Rev))/binary>>,
+                git => #{
+                    url => list_to_binary(Url),
+                    rev => list_to_binary(Rev),
+                    submodules => false,
+                    leaveDotGit => true
+                },
+                hash => Hash
+            };
+        {Status, Out} ->
+            rp_util:fail("nix-prefetch-git ~ts failed with exit status ~b:~n~ts", [Url, Status, Out])
+    end.
+
+https_url("git@" ++ Rest) ->
+    case string:split(Rest, ":") of
+        [Host, Path] -> "https://" ++ Host ++ "/" ++ Path;
+        _ -> "git@" ++ Rest
+    end;
+https_url("ssh://" ++ Rest) ->
+    HostPath = case string:split(Rest, "@") of
+        [_User, HP] -> HP;
+        [HP] -> HP
+    end,
+    [Host | Path] = string:split(HostPath, "/"),
+    HostNoPort = hd(string:split(Host, ":")),
+    "https://" ++ HostNoPort ++ "/" ++ lists:flatten(Path);
+https_url("git://" ++ Rest) ->
+    "https://" ++ Rest;
+https_url(Url) ->
+    Url.
+
+%% Outputs
+
+outputs(Root, Project, Config) ->
+    Apps = [app(Root, Project, Dir) || Dir <- rp_util:app_dirs(Root)],
+    Plugins = [plugin_name(P) || Key <- [plugins, project_plugins],
+                                 P <- proplists:get_value(Key, Config, [])],
+    #{
+        apps => Apps,
+        releases => releases(Config),
+        escripts => escripts(Config),
+        hexPackages => case lists:member(rebar3_hex, Plugins) of
+            true -> [maps:with([name, version], A) || A <- Apps];
+            false -> []
+        end
+    }.
+
+app(Root, Project, Dir) ->
+    [Src] = filelib:wildcard("src/*.app.src", filename:join(Root, Dir)),
+    Name = filename:basename(Src, ".app.src"),
+    AppFile = filename:join([Project, "_build", "default", "lib", Name, "ebin", Name ++ ".app"]),
+    Version = case file:consult(AppFile) of
+        {ok, [{application, _, Props}]} -> rp_util:to_bin(proplists:get_value(vsn, Props, ""));
+        _ -> rp_util:fail("rebar3 compile wrote no ~ts", [AppFile])
+    end,
+    #{name => list_to_binary(Name), version => Version, dir => list_to_binary(Dir)}.
+
+plugin_name(P) when is_atom(P) -> P;
+plugin_name(P) when is_tuple(P) -> element(1, P).
+
+%% The names of the relx releases of the default and prod profiles.
+releases(Config) ->
+    Profiles = proplists:get_value(profiles, Config, []),
+    Relx = proplists:get_value(relx, Config, []) ++
+        proplists:get_value(relx, proplists:get_value(prod, Profiles, []), []),
+    lists:usort([rp_util:to_bin(Name) || R <- Relx,
+                                        element(1, R) =:= release,
+                                        {Name, _} <- [element(2, R)]]).
+
+%% The escript, when rebar.config names it or its main application.
+escripts(Config) ->
+    case {proplists:get_value(escript_name, Config), proplists:get_value(escript_main_app, Config)} of
+        {undefined, undefined} -> [];
+        {undefined, Main} -> [rp_util:to_bin(Main)];
+        {Name, _} -> [rp_util:to_bin(Name)]
+    end.

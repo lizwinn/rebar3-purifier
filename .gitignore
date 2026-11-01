@@ -1,0 +1,5 @@
+/result*
+/toolchain
+_build/
+.idea/
+.vscode/

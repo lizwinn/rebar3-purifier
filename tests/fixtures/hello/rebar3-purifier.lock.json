@@ -1,0 +1,106 @@
+{
+  "artifacts": [
+    {
+      "git": {
+        "leaveDotGit": true,
+        "rev": "29360b25b708b2dc9d68a4f46f6a1b8b55f72518",
+        "submodules": false,
+        "url": "https://github.com/eproxus/meck.git"
+      },
+      "hash": "sha256-f8UgkMRAVvNqVVNuSaGf8AwDwafFFokJNrnsGwvwq+o=",
+      "path": "git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518"
+    },
+    {
+      "hash": "sha256-inq+bRgzcs6yHKonCb7JKKsrcuGKORGqF3Fjm++CZR4=",
+      "mirrors": [],
+      "path": "hex/hexpm/packages/cowboy-2.12.0.tar",
+      "url": "https://repo.hex.pm/tarballs/cowboy-2.12.0.tar"
+    },
+    {
+      "hash": "sha256-4eEoTcP8Awpksa0Ng4KufpnaRsMka4FTGKS4SIc4AKQ=",
+      "mirrors": [],
+      "path": "hex/hexpm/packages/cowlib-2.13.0.tar",
+      "url": "https://repo.hex.pm/tarballs/cowlib-2.13.0.tar"
+    },
+    {
+      "hash": "sha256-94PKioNnyS+W7HXI/uLGNu/Q85rEX/V9jYJacbS5V9M=",
+      "mirrors": [],
+      "path": "hex/hexpm/packages/erlfmt-1.8.0.tar",
+      "url": "https://repo.hex.pm/tarballs/erlfmt-1.8.0.tar"
+    },
+    {
+      "hash": "sha256-GXHRbRiMWM8AQuIfGbGF608/XIlnhHLHNZUraWqPyIg=",
+      "mirrors": [],
+      "path": "hex/hexpm/packages/hex_core-0.21.1.tar",
+      "url": "https://repo.hex.pm/tarballs/hex_core-0.21.1.tar"
+    },
+    {
+      "hash": "sha256-DFzI/cEbU8wlz2WsZwWtOeVOzFbRwi5K249aU/uUJ/M=",
+      "mirrors": [],
+      "path": "hex/hexpm/packages/jsx-3.1.0.tar",
+      "url": "https://repo.hex.pm/tarballs/jsx-3.1.0.tar"
+    },
+    {
+      "hash": "sha256-SfvP02gvqx9dEJNRthJXZ22hov2+KVkEF21eUhot3+U=",
+      "mirrors": [],
+      "path": "hex/hexpm/packages/ranch-1.8.0.tar",
+      "url": "https://repo.hex.pm/tarballs/ranch-1.8.0.tar"
+    },
+    {
+      "hash": "sha256-F++JXD1sBhTOdi3wKb/aCNaZhnX0AAiYP6K4HT5dtg8=",
+      "mirrors": [],
+      "path": "hex/hexpm/packages/rebar3_hex-7.4.0.tar",
+      "url": "https://repo.hex.pm/tarballs/rebar3_hex-7.4.0.tar"
+    },
+    {
+      "hash": "sha256-CSXlHNkqCovicXZbAkMLLiz/isMO8k0SO9DVhRHo+xg=",
+      "mirrors": [],
+      "path": "hex/hexpm/packages/verl-1.1.1.tar",
+      "url": "https://repo.hex.pm/tarballs/verl-1.1.1.tar"
+    }
+  ],
+  "definitionFiles": [
+    "rebar.config",
+    "rebar.lock"
+  ],
+  "definitionHash": "sha256-PIeuuallGMu4yg/Moz+xc+HF3sWP7GK4gmRQXwpVVCI=",
+  "gitSources": [
+    {
+      "branches": [],
+      "path": "git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518",
+      "tags": [
+        "1.0.0"
+      ],
+      "url": "https://github.com/eproxus/meck.git"
+    }
+  ],
+  "otpRelease": "28",
+  "outputs": {
+    "apps": [
+      {
+        "dir": ".",
+        "name": "hello",
+        "version": "0.1.0"
+      }
+    ],
+    "escripts": [
+      "hello"
+    ],
+    "hexPackages": [
+      {
+        "name": "hello",
+        "version": "0.1.0"
+      }
+    ],
+    "releases": [
+      "hello"
+    ]
+  },
+  "profiles": [
+    "default",
+    "prod",
+    "test"
+  ],
+  "rebar3Version": "3.28.0",
+  "version": 1
+}

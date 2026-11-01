@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: MIT
+#
+# Erlang and rebar3 of the package set, with `rebar3` replaced by a wrapper
+# under that name. It runs the real rebar3 against the locked downloads of
+# a build that has a current rebar3-purifier.lock.json, and the usual way
+# otherwise. `rebar3-purifier` sits beside it, for `rebar3-purifier lock`
+# and `rebar3-purifier publish`.
+#
+# Both take git, for git dependencies, and nix-prefetch-git, for locking
+# them, from the end of PATH, so a git on the user's PATH comes first. The
+# wrapper and `rebar3-purifier publish` build with the nixpkgs of this
+# package set unless REBAR3_PURIFIER_NIXPKGS names another.
+{
+  lib,
+  runCommand,
+  makeWrapper,
+  runtimeShell,
+  beamPackages,
+  git,
+  nix-prefetch-git,
+  path,
+  cli,
+}:
+let
+  inherit (beamPackages) erlang rebar3;
+  wrapperArgs = lib.escapeShellArgs [
+    "--set"
+    "REBAR3_PURIFIER_REBAR3"
+    "${rebar3}/bin/rebar3"
+    "--set"
+    "REBAR3_PURIFIER_NIX_LIB"
+    "${../../nix/lib}"
+    "--set-default"
+    "REBAR3_PURIFIER_NIXPKGS"
+    "${path}"
+    "--suffix"
+    "PATH"
+    ":"
+    (lib.makeBinPath [
+      git
+      nix-prefetch-git
+    ])
+  ];
+in
+runCommand "rebar3-purifier-toolchain-${rebar3.version}"
+  {
+    nativeBuildInputs = [ makeWrapper ];
+    passthru = { inherit erlang rebar3 cli; };
+    meta = {
+      description = "rebar3 with its downloads from a rebar3-purifier lockfile";
+      mainProgram = "rebar3-purifier";
+    };
+  }
+  ''
+    mkdir -p "$out/bin"
+    for tool in ${erlang}/bin/*; do
+      ln -s "$tool" "$out/bin/$(basename "$tool")"
+    done
+    makeWrapper ${lib.getExe cli} "$out/bin/rebar3-purifier" ${wrapperArgs}
+    cat > "$out/bin/rebar3" <<EOF
+    #!${runtimeShell}
+    env=\$("$out/bin/rebar3-purifier" env) || exit \$?
+    eval "\$env"
+    exec ${rebar3}/bin/rebar3 "\$@"
+    EOF
+    chmod +x "$out/bin/rebar3"
+  ''

@@ -1,0 +1,11 @@
+{application, hello, [
+    {description, "A greeting in JSON, for the rebar3-purifier checks"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {hello_app, []}},
+    {applications, [kernel, stdlib, jsx]},
+    {env, []},
+    {modules, []},
+    {licenses, ["MIT"]},
+    {links, [{"GitHub", "https://github.com/nix-purifiers/rebar3-purifier"}]}
+]}.
