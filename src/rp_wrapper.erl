@@ -30,7 +30,11 @@ env() ->
             {#{lock_file := LockFile} = Project, []} = rp_util:project([]),
             case filelib:is_regular(LockFile) of
                 false ->
-                    ok;
+                    io:format(
+                        standard_error,
+                        "rebar3-purifier: warning: no rebar3-purifier.lock.json found; running rebar3 impurely. Run `rebar3-purifier lock` to use Nix-resolved dependencies.~n",
+                        []
+                    );
                 true ->
                     rp_check:current(Project),
                     {Tree, Cache} = prepare(Project),

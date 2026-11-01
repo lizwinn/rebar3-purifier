@@ -1,43 +1,102 @@
 # rebar3-purifier
 
-rebar3-purifier makes Nix the dependency backend of a rebar3 build. It
-records the files rebar3 wants to download, so that Nix can build the
-project in its sandbox, and it points the everyday rebar3 at the same
-downloads. You do not commit any generated Nix files to your repository.
+rebar3-purifier keeps rebar3's development workflow on locked,
+Nix-resolved dependencies. Use the normal build and test commands in your
+working tree; building the project itself in the Nix sandbox is an
+optional next step.
+
+It follows the [purifier contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
 
 rebar3-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io),
 which share one interface. It supports x86_64-linux and aarch64-linux.
 
+## Installation
+
+Install the integration into your Nix profile once:
+
+```sh
+nix profile install 'github:nix-purifiers/rebar3-purifier'
+```
+
+This installs the `rebar3` wrapper. Use it for the locked
+development workflow below. With no purifier lockfile, it warns on standard
+error and runs the ordinary tool with impure resolution.
+
+`nix shell` makes an integration available temporarily instead of installing
+it. Keep using the activation steps below where a project environment or
+prefetched cache is required.
+
 ## Quickstart
 
-Lock the project, from its directory:
+Install Nix, then run the following from your existing project's root.
+The setup prepares the locked dependencies and the integration that
+rebar3's normal commands use:
 
 ```zsh
-nix run github:nix-purifiers/rebar3-purifier -- lock
+nix develop github:nix-purifiers/rebar3-purifier
+rebar3-purifier lock
+rebar3 compile
+rebar3 eunit
 ```
 
-This writes `rebar3-purifier.lock.json` next to `rebar.config`, and adds to
-`rebar.lock` what it did not hold. Commit both. Then build the project from
-its directory, with no Nix file added to it:
+Commit the lockfiles that the lock command writes, including the build
+tool's own lockfile when it has one. Keep using the project's usual build,
+test and editor commands with this setup. Nix provides the locked
+dependencies; the development commands above run outside the Nix sandbox.
+No project Nix files are needed for this workflow.
 
-```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.rebar3-purifier.buildRebar3Project { src = ./.; }).packages.default'
-```
+Sandboxed builds of the whole project are an optional
+[next step](#building-the-project-with-nix).
 
-This uses the purifier's pinned nixpkgs, matching the lock command above.
-To build with ambient `<nixpkgs>` from your Nix search path instead,
-replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
-Both forms need no Nix files in your project. The build tool and language
-versions must match the lockfile; with ambient nixpkgs, lock with the
-purifier from that package set or pass a compatible toolchain to the builder.
+## Development loop
+
+`nix develop github:nix-purifiers/rebar3-purifier` gives a shell with
+`rebar3`, the Erlang tools, `elp` and `rebar3-purifier`. Run rebar3 as
+usual: `rebar3 compile`, `rebar3 eunit`, `rebar3 ct`, `rebar3 shell`,
+`rebar3 release`. In a project with a lockfile, `rebar3` first builds the
+cache tree of the lockfile through Nix, and runs with:
+
+- `REBAR_CACHE_DIR` at `_build/rebar3-purifier/cache`, a writable copy of
+  the tree: links to the locked tarballs, with the package index and etags
+  rebar3 reads beside them;
+- `HEX_CDN` at an address that refuses connections, so rebar3 takes every
+  Hex tarball from the cache;
+- git redirected, with `url.<repository>.insteadOf`, from each locked git
+  URL to a repository in the store that holds the locked commit.
+
+A dependency that is not in the lockfile fails to fetch, with the message
+of rebar3. A project without a lockfile resolves the usual way.
+`REBAR3_PURIFIER=0` turns interactive mode off.
+
+The commands:
+
+- `rebar3-purifier lock` runs rebar3 in a copy of the project with empty
+  caches and the network, on the `default`, `test` and `prod` profiles
+  (`--profile <name>` adds one), and records what rebar3 downloaded and
+  what the build produces. It keeps the resolution of `rebar.lock`. A
+  relock of an unchanged project writes the same bytes.
+- `rebar3-purifier update [<package>...]` runs `rebar3 upgrade` on every
+  dependency, or on the named ones, and then locks.
+- `rebar3-purifier prefetch` is described under Working offline.
+- `rebar3-purifier publish [--dry-run] [<application>...]` builds the
+  `release` through Nix and uploads those tarballs to Hex with the Hex
+  client of rebar3. `HEX_API_KEY` holds the key, `HEX_API_URL` replaces the
+  default API (`https://hex.pm/api`), and `HEX_ORGANIZATION` publishes into
+  an organization. `--dry-run` builds the tarballs and prints their paths.
+
+rebar3 has a plugin mechanism, and rebar3-purifier is a separate command
+that runs beside it. `lock` runs rebar3 itself in a copy of the project
+with empty caches, and the `rebar3` of the toolchain sets the Hex and git
+environment before rebar3 starts. A plugin runs inside rebar3, after it has
+read its cache and configuration, so it cannot do either.
+
+## Building the project with Nix
+
+Once the native development workflow is working, you can also build and
+test the whole project in the Nix sandbox. For this step, keep a flake or
+another Nix build definition in the project's repository, or maintain an
+external packaging repository that points at its sources and lockfiles.
+The builder consumes the same lockfiles as the development workflow.
 
 The overlay of the flake adds one attribute to a package set, the scope
 `rebar3-purifier`. The scope holds the builder `buildRebar3Project` beside
@@ -113,47 +172,29 @@ the lockfile at that path and leave the copy in the tree as it is, and
 `lock` starts from the copy of `rebar.lock` in the tree while the one
 outside does not exist.
 
-## Development loop
+### One-off builds without a project Nix file
 
-`nix develop github:nix-purifiers/rebar3-purifier` gives a shell with
-`rebar3`, the Erlang tools, `elp` and `rebar3-purifier`. Run rebar3 as
-usual: `rebar3 compile`, `rebar3 eunit`, `rebar3 ct`, `rebar3 shell`,
-`rebar3 release`. In a project with a lockfile, `rebar3` first builds the
-cache tree of the lockfile through Nix, and runs with:
+For an ad hoc build, the builder can also be evaluated directly from the
+project root. Replace the example package name with one from your project:
 
-- `REBAR_CACHE_DIR` at `_build/rebar3-purifier/cache`, a writable copy of
-  the tree: links to the locked tarballs, with the package index and etags
-  rebar3 reads beside them;
-- `HEX_CDN` at an address that refuses connections, so rebar3 takes every
-  Hex tarball from the cache;
-- git redirected, with `url.<repository>.insteadOf`, from each locked git
-  URL to a repository in the store that holds the locked commit.
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.rebar3-purifier.buildRebar3Project { src = ./.; }).packages.default'
+```
 
-A dependency that is not in the lockfile fails to fetch, with the message
-of rebar3. A project without a lockfile resolves the usual way.
-`REBAR3_PURIFIER=0` turns interactive mode off.
-
-The commands:
-
-- `rebar3-purifier lock` runs rebar3 in a copy of the project with empty
-  caches and the network, on the `default`, `test` and `prod` profiles
-  (`--profile <name>` adds one), and records what rebar3 downloaded and
-  what the build produces. It keeps the resolution of `rebar.lock`. A
-  relock of an unchanged project writes the same bytes.
-- `rebar3-purifier update [<package>...]` runs `rebar3 upgrade` on every
-  dependency, or on the named ones, and then locks.
-- `rebar3-purifier prefetch` is described under Working offline.
-- `rebar3-purifier publish [--dry-run] [<application>...]` builds the
-  `release` through Nix and uploads those tarballs to Hex with the Hex
-  client of rebar3. `HEX_API_KEY` holds the key, `HEX_API_URL` replaces the
-  default API (`https://hex.pm/api`), and `HEX_ORGANIZATION` publishes into
-  an organization. `--dry-run` builds the tarballs and prints their paths.
-
-rebar3 has a plugin mechanism, and rebar3-purifier is a separate command
-that runs beside it. `lock` runs rebar3 itself in a copy of the project
-with empty caches, and the `rebar3` of the toolchain sets the Hex and git
-environment before rebar3 starts. A plugin runs inside rebar3, after it has
-read its cache and configuration, so it cannot do either.
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
 
 ## Working offline
 
@@ -250,6 +291,11 @@ Three more decisions:
   release and the rebar3 version of the lock for reference.
 
 ## Examples
+
+For day-to-day work on these projects, use the native-tool setup and
+commands in [Quickstart](#quickstart) and [Development loop](#development-loop).
+The Nix expressions below show optional sandboxed packaging of those
+projects.
 
 ### erlang_ls
 
