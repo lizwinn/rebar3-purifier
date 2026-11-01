@@ -16,6 +16,10 @@ let
     doCheck = true;
   };
 
+  # Two applications under apps/, git dependencies at a tag and in a
+  # subdirectory of a repository, a plugin from git, and a release of both.
+  umbrella = buildRebar3Project { src = ./fixtures/umbrella; };
+
   # Runs a command and compares what it prints.
   prints =
     name: command: expected:
@@ -64,14 +68,30 @@ in
   '';
 
   # The cache tree holds every locked tarball with its etag, the package
-  # index, and the git clone with its .git directory.
+  # index, and the repository rebuilt from the git checkout, whose tag
+  # names the locked commit.
   fixture-hello-cache = runCommand "fixture-hello-cache" { } ''
     for p in cowboy-2.12.0 cowlib-2.13.0 jsx-3.1.0 ranch-1.8.0 erlfmt-1.8.0 rebar3_hex-7.4.0; do
       test -f ${hello.cache}/hex/hexpm/packages/$p.tar
       test -f ${hello.cache}/hex/hexpm/packages/$p.etag
     done
     test -f ${hello.cache}/hex/packages.idx
-    test -d ${hello.cache}/git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518/.git
+    repo=${hello.cache}/git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518
+    test "$(cat $repo/refs/tags/1.0.0)" = 29360b25b708b2dc9d68a4f46f6a1b8b55f72518
+    ${extended.git}/bin/git -c safe.directory='*' -C $repo cat-file -e 29360b25b708b2dc9d68a4f46f6a1b8b55f72518^{tree}
+    touch $out
+  '';
+
+  fixture-umbrella-release = runCommand "fixture-umbrella-release" { } ''
+    HOME=$TMPDIR SERVER_ONESHOT=1 ${lib.getExe umbrella.releases.umbrella} foreground > actual
+    grep -qx 'Hello, Nix (recon 2.5.6, opentelemetry_api 1.5.0)' actual
+    touch $out
+  '';
+
+  # Each application of the umbrella is an output of its own.
+  fixture-umbrella-apps = runCommand "fixture-umbrella-apps" { } ''
+    test -f ${umbrella.apps.greeter}/lib/greeter/ebin/greeter.beam
+    test -f ${umbrella.apps.server}/lib/server/ebin/server_app.beam
     touch $out
   '';
 

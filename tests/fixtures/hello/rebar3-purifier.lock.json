@@ -2,12 +2,12 @@
   "artifacts": [
     {
       "git": {
-        "leaveDotGit": true,
+        "leaveDotGit": false,
         "rev": "29360b25b708b2dc9d68a4f46f6a1b8b55f72518",
         "submodules": false,
         "url": "https://github.com/eproxus/meck.git"
       },
-      "hash": "sha256-f8UgkMRAVvNqVVNuSaGf8AwDwafFFokJNrnsGwvwq+o=",
+      "hash": "sha256-qDMPotYsvQU+XKUWFqt5YsTobmrktejpWah0qWaNpFE=",
       "path": "git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518"
     },
     {
@@ -67,6 +67,8 @@
   "gitSources": [
     {
       "branches": [],
+      "commitObject": "dHJlZSAwNDk1MjZlZjYwNzI4NWU4MTQ5OWVlZDM2ZDM5MzY4ZmM2MDk0ZGQ1CnBhcmVudCA0NzQ2NTFjMWJhN2ZiMWYxZTc2MmI4OGMxNjE2NDk3ZjA2ODI1Njc0CmF1dGhvciBBZGFtIExpbmRiZXJnIDxoZWxsb0BhbGluZC5pbz4gMTczNDA4MTM4OCArMDEwMApjb21taXR0ZXIgQWRhbSBMaW5kYmVyZyA8aGVsbG9AYWxpbmQuaW8+IDE3MzQwODE0NzQgKzAxMDAKZ3Bnc2lnIC0tLS0tQkVHSU4gU1NIIFNJR05BVFVSRS0tLS0tCiBVMU5JVTBsSEFBQUFBUUFBQURNQUFBQUxjM05vTFdWa01qVTFNVGtBQUFBZ25UZURreGZLV0ZwcWNWaXI1b1VEOXcwUTd6CiAxRENWMDJoK1VtaHIrSzR2NEFBQUFEWjJsMEFBQUFBQUFBQUFaemFHRTFNVElBQUFCVEFBQUFDM056YUMxbFpESTFOVEU1CiBBQUFBUU1SRUl4OE9EaksySVV1RGozWEMxd3Zkd2M5akFYLy90NWZhT0F3WDRneVd6N0ZxWTgwcWcvUVUvUTAzWTBlWHFmCiA1MzMzYUNOYkNXVXAya2tWMGpUZ1U9CiAtLS0tLUVORCBTU0ggU0lHTkFUVVJFLS0tLS0KClVzZSBleF9kb2MgaW5zdGVhZCBvZiBlZG9jCg==",
+      "gitlinks": [],
       "path": "git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518",
       "tags": [
         "1.0.0"

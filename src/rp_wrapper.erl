@@ -34,9 +34,8 @@ env(Root, LockFile, {ok, Lock}) ->
         true ->
             Tree = realize(Root, LockFile),
             Cache = filename:join([Root, "_build", "rebar3-purifier", "cache"]),
-            GitSources = maps:get(<<"gitSources">>, Lock, []),
-            mirror(Tree, Cache, GitSources),
-            print(Cache, GitSources)
+            mirror(Tree, Cache),
+            print(Tree, Cache, maps:get(<<"gitSources">>, Lock, []))
     end.
 
 warn(Format, Args) ->
@@ -71,10 +70,9 @@ env_var(Name) ->
 
 %% rebar3 writes into its cache, so the cache is a writable tree with the
 %% same layout: links to the tarballs, and copies of the index and etags,
-%% which rebar3 may rewrite. The git clones are writable copies with the
-%% tags and branches the lock run saw, since rebar3 clones a tag or a
-%% branch by name. A marker records the store path the tree mirrors.
-mirror(Tree, Cache, GitSources) ->
+%% which rebar3 may rewrite. git fetches from the repositories in the store
+%% tree. A marker records the store path the tree mirrors.
+mirror(Tree, Cache) ->
     Marker = filename:join(Cache, ".rebar3-purifier-tree"),
     TreeBin = list_to_binary(Tree),
     case file:read_file(Marker) of
@@ -100,27 +98,10 @@ mirror(Tree, Cache, GitSources) ->
                 end,
                 rp_util:walk(HexTree)
             ),
-            lists:foreach(fun(S) -> mirror_git(Tree, Cache, S) end, GitSources),
             ok = file:write_file(Marker, Tree)
     end.
 
-mirror_git(Tree, Cache, #{<<"path">> := Path} = Source) ->
-    To = filename:join(Cache, Path),
-    Rev = filename:basename(binary_to_list(Path)),
-    case filelib:is_dir(To) of
-        true ->
-            ok;
-        false ->
-            rp_util:ensure_dir(filename:dirname(To)),
-            {0, _} = rp_util:run_quiet("cp", ["-rL", "--no-preserve=mode", filename:join(Tree, Path), To], Cache, [])
-    end,
-    [{0, _} = rp_util:run_quiet("git", ["-C", To, "tag", "-f", binary_to_list(T), Rev], Cache, [])
-     || T <- maps:get(<<"tags">>, Source, [])],
-    [{0, _} = rp_util:run_quiet("git", ["-C", To, "branch", "-f", binary_to_list(B), Rev], Cache, [])
-     || B <- maps:get(<<"branches">>, Source, [])],
-    ok.
-
-print(Cache, GitSources) ->
+print(Tree, Cache, GitSources) ->
     Count = case os:getenv("GIT_CONFIG_COUNT") of
         false -> 0;
         N -> list_to_integer(N)
@@ -128,7 +109,7 @@ print(Cache, GitSources) ->
     GitConfig =
         [{"safe.directory", "*"}] ++
             [
-                {"url." ++ filename:join(Cache, binary_to_list(P)) ++ ".insteadOf", binary_to_list(U)}
+                {"url." ++ filename:join(Tree, binary_to_list(P)) ++ ".insteadOf", binary_to_list(U)}
              || #{<<"url">> := U, <<"path">> := P} <- GitSources
             ],
     Lines =

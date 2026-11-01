@@ -202,12 +202,10 @@ add_private_tarballs(Cache, Tarballs) ->
 
 %% Git dependencies
 
-%% A git entry per repository rebar3 cloned, at the commit it checked out.
-%% rebar3 clones a git dependency with its .git directory and checks the
-%% commit and remote URL there, so the entries keep .git. rebar3 does not
-%% check out submodules. An SSH URL is recorded as the HTTPS URL of the
-%% same host, since the Nix sandbox has no SSH keys, and gitSources maps
-%% the URL rebar3 uses to the entry.
+%% A git entry per repository rebar3 cloned, at the commit it checked out,
+%% as a plain checkout. rebar3 does not check out submodules. An SSH URL is
+%% recorded as the HTTPS URL of the same host, since the Nix sandbox has no
+%% SSH keys, and gitSources maps the URL rebar3 uses to the entry.
 git_entries(Project) ->
     Dirs = [
         D
@@ -234,13 +232,25 @@ git_entries(Project) ->
         fun({_, _, Tags, Branches}) -> {Tags, Branches} end,
         Repos
     ),
+    %% The build rebuilds a repository from each plain checkout, with the
+    %% raw commit object and the submodule entries of its tree; see
+    %% rp_git.
+    Commits = maps:from_list([
+        {R, rp_git:commit_info(https_url(U), R)}
+     || {U, R} <- lists:usort([{U, R} || {U, R, _, _} <- Repos])
+    ]),
     Sources = [
-        #{
-            url => list_to_binary(U),
-            path => <<"git/", (list_to_binary(R))/binary>>,
-            tags => lists:usort([list_to_binary(T) || {Ts, _} <- Refs, T <- Ts]),
-            branches => lists:usort([list_to_binary(B) || {_, Bs} <- Refs, B <- Bs])
-        }
+        begin
+            {CommitObject, Gitlinks} = maps:get(R, Commits),
+            #{
+                url => list_to_binary(U),
+                path => <<"git/", (list_to_binary(R))/binary>>,
+                tags => lists:usort([list_to_binary(T) || {Ts, _} <- Refs, T <- Ts]),
+                branches => lists:usort([list_to_binary(B) || {_, Bs} <- Refs, B <- Bs]),
+                commitObject => CommitObject,
+                gitlinks => Gitlinks
+            }
+        end
      || {U, R} := Refs <- maps:iterator(Grouped, ordered)
     ],
     {Entries, Sources}.
@@ -270,8 +280,7 @@ git_out(Dir, Args) ->
 git_entry(Url, Rev) ->
     io:format(standard_error, "rebar3-purifier: hashing ~ts at ~ts~n", [Url, Rev]),
     {ok, Cwd} = file:get_cwd(),
-    case rp_util:run_quiet("nix-prefetch-git",
-                           ["--url", Url, "--rev", Rev, "--leave-dotGit", "--quiet"], Cwd, []) of
+    case rp_util:run_quiet("nix-prefetch-git", ["--url", Url, "--rev", Rev, "--quiet"], Cwd, []) of
         {0, Out} ->
             #{<<"hash">> := Hash} = json:decode(Out),
             #{
@@ -280,7 +289,7 @@ git_entry(Url, Rev) ->
                     url => list_to_binary(Url),
                     rev => list_to_binary(Rev),
                     submodules => false,
-                    leaveDotGit => true
+                    leaveDotGit => false
                 },
                 hash => Hash
             };

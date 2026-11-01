@@ -93,32 +93,18 @@ let
       ;
   };
 
-  # git fetches each locked repository from a writable copy of its clone
-  # in the cache tree, which gets the tags and branches the lock run saw,
-  # since rebar3 clones a tag or a branch by name. The copies are under
-  # $TMPDIR, so the configuration names them in the shell.
-  gitSetup = lib.concatMapStrings (s: ''
-    if [ ! -d "$TMPDIR/${s.path}" ]; then
-      mkdir -p "$(dirname "$TMPDIR/${s.path}")"
-      cp -rL --no-preserve=mode ${cache}/${s.path} "$TMPDIR/${s.path}"
-    fi
-    ${lib.concatMapStrings (t: ''
-      git -C "$TMPDIR/${s.path}" tag -f ${lib.escapeShellArg t} ${baseNameOf s.path}
-    '') s.tags}
-    ${lib.concatMapStrings (b: ''
-      git -C "$TMPDIR/${s.path}" branch -f ${lib.escapeShellArg b} ${baseNameOf s.path}
-    '') s.branches}
-  '') lock.gitSources;
-
+  # git fetches each locked repository from its rebuilt repository in the
+  # cache tree. The repositories belong to another user, so git has to
+  # trust them.
   gitConfig = [
     {
-      key = "'safe.directory'";
-      value = "'*'";
+      key = "safe.directory";
+      value = "*";
     }
   ]
   ++ map (s: {
-    key = ''"url.$TMPDIR/${s.path}.insteadOf"'';
-    value = lib.escapeShellArg s.url;
+    key = "url.${cache}/${s.path}.insteadOf";
+    value = s.url;
   }) lock.gitSources;
 
   defaultSrcFilter =
@@ -166,10 +152,9 @@ let
       fi
       export GIT_CONFIG_COUNT=${toString (builtins.length gitConfig)}
       ${lib.concatImapStrings (i: c: ''
-        export GIT_CONFIG_KEY_${toString (i - 1)}=${c.key}
-        export GIT_CONFIG_VALUE_${toString (i - 1)}=${c.value}
+        export GIT_CONFIG_KEY_${toString (i - 1)}=${lib.escapeShellArg c.key}
+        export GIT_CONFIG_VALUE_${toString (i - 1)}=${lib.escapeShellArg c.value}
       '') gitConfig}
-      ${gitSetup}
       runHook postConfigure
     '';
 

@@ -22,17 +22,25 @@
 -define(INDEX_VERSION, 7).
 
 %% The builder of the cache tree in Nix. The manifest lists one entry per
-%% line, its path in the tree and its store path, separated by a tab.
+%% line, its path in the tree and its store path, separated by a tab. A
+%% file entry is linked at its path. A git entry is a plain checkout, and
+%% its path gets the repository rp_git rebuilds from it, with what the
+%% lockfile's gitSources record about it.
 build_cache() ->
     Out = os:getenv("out"),
     {ok, Manifest} = file:read_file(os:getenv("manifestPath")),
+    {ok, Lock} = rp_util:read_lock(os:getenv("lockFile")),
+    Sources = maps:from_list([{P, S} || S = #{<<"path">> := P} <- maps:get(<<"gitSources">>, Lock, [])]),
     Lines = [L || L <- binary:split(Manifest, <<"\n">>, [global]), L =/= <<>>],
     lists:foreach(
         fun(Line) ->
             [Path, Store] = binary:split(Line, <<"\t">>),
-            Link = filename:join(Out, Path),
-            rp_util:ensure_dir(filename:dirname(Link)),
-            ok = file:make_symlink(Store, Link)
+            Target = filename:join(Out, Path),
+            rp_util:ensure_dir(filename:dirname(Target)),
+            case maps:find(Path, Sources) of
+                {ok, Source} -> rp_git:make_repo(Store, Target, Source);
+                error -> ok = file:make_symlink(Store, Target)
+            end
         end,
         Lines
     ),
