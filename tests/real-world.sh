@@ -59,7 +59,8 @@ rebar3-purifier lock
 echo "$project: lock took $((SECONDS - start)) s"
 
 cli=$(readlink -f "$share/cli")
-expr="let pkgs = import $share/nixpkgs { }; build = pkgs.callPackage $share/nix-lib/build-rebar3-project.nix { rebar3-purifier.cli = builtins.storePath \"$cli\"; }; in (build { src = $src; }).escripts.$escript"
+purifier=$(readlink -f "$share/purifier")
+expr="let pkgs = import $share/nixpkgs { }; build = pkgs.callPackage $share/nix-lib/build-rebar3-project.nix { rebar3-purifier.cli = builtins.storePath \"$cli\"; purifier = import (builtins.storePath \"$purifier\" + \"/nix/lib\") { inherit (pkgs) lib; }; }; in (build { src = $src; }).escripts.$escript"
 built=$(nix-build --no-out-link -E "$expr")
 "$built/bin/$escript" "${args[@]}"
 echo "$project: sandboxed build: ok"

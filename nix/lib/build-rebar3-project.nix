@@ -43,6 +43,9 @@
   hostname,
   # The rebar3-purifier package scope, whose `cli` builds the cache tree.
   rebar3-purifier,
+  # The shared purifier library (`lib.purifier` of its flake), which
+  # fetches the locked downloads. The package overlay passes it.
+  purifier,
 }:
 let
   defaultFetchurl = fetchurl;
@@ -58,7 +61,8 @@ in
   beamPackages ? null,
   # The rebar3-purifier command.
   cli ? rebar3-purifier.cli,
-  # Replace the fetchers, for credentials or mirrors; see fetch.nix.
+  # Replace the fetchers, for credentials or mirrors; the shared purifier
+  # library's fetchEntry passes them the arguments of nixpkgs' fetchers.
   fetchurl ? defaultFetchurl,
   fetchgit ? defaultFetchgit,
   # The profile releases are built with.
@@ -90,6 +94,7 @@ let
       cli
       fetchurl
       fetchgit
+      purifier
       ;
   };
 

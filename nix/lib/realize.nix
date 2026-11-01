@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MIT
 #
 # The cache tree the rebar3 wrapper builds for interactive use, from the
-# nixpkgs the toolchain names. `nix-build` of this file fetches every
-# entry, and its out link is the GC root that keeps them alive.
+# nixpkgs and the shared purifier library the toolchain names. `nix-build`
+# of this file fetches every entry, and its out link is the GC root that
+# keeps them alive.
 {
   # The lockfile, as an absolute path.
   lockFile,
@@ -10,6 +11,8 @@
   cli,
   # The nixpkgs to fetch with.
   nixpkgs,
+  # The source of the shared purifier library.
+  purifierSrc,
 }:
 let
   pkgs = import nixpkgs { };
@@ -19,4 +22,5 @@ assert match != null || throw "rebar3-purifier: the command ${cli} is not in the
 pkgs.callPackage ./cache.nix {
   inherit lockFile;
   cli = builtins.storePath (builtins.head match);
+  purifier = import (builtins.storePath purifierSrc + "/nix/lib") { inherit (pkgs) lib; };
 }

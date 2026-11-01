@@ -64,6 +64,9 @@ realize(Root, LockFile) ->
         "--arg",
         "nixpkgs",
         env_var("REBAR3_PURIFIER_NIXPKGS"),
+        "--argstr",
+        "purifierSrc",
+        env_var("REBAR3_PURIFIER_PURIFIER_SRC"),
         "--out-link",
         Link
     ],

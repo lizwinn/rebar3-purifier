@@ -22,22 +22,25 @@ the URL rebar3 uses and the tags and branches it clones by.
   modules of the rebar3 escript on the code path. `rebar3_purifier` is the
   entry point. `rp_lock` is the lock run and the lockfile format. `rp_index`
   builds the cache tree in Nix and writes the package index and etags from
-  the Hex tarballs. `rp_git` rebuilds a git repository from a plain checkout
-  and a commit object, and reads both during the lock run. `rp_check` and
+  the Hex tarballs. `rp_git` reads the commit object and submodule entries
+  of each git dependency during the lock run, and makes a bare repository,
+  with the tags and branches rebar3 clones by, of the `.git` directory the
+  shared purifier library rebuilds. `rp_check` and
   `rp_versions` run in the sandbox before rebar3: the first checks the
   lockfile against the source, the second pins versions that come from
   git. `rp_wrapper` is interactive mode, and `rp_publish` is
   `rebar3-purifier publish`. `rp_util` holds what they share, and
   `rp_tests` the unit tests.
 - The Nix library (`nix/lib`). `lock.nix` reads a lockfile and rejects
-  other format versions. `fetch.nix` fetches one entry. `cache.nix` is the
-  cache tree, `realize.nix` builds it for interactive mode, and
+  other format versions. `cache.nix` is the cache tree, whose entries the
+  shared purifier library (the flake's `purifier` input) fetches.
+  `realize.nix` builds the tree for interactive mode, and
   `build-rebar3-project.nix` is `buildRebar3Project`.
 - The packages (`pkgs`). `cli` is the rebar3-purifier command, with its unit
   tests run in its build. `toolchain` is Erlang and rebar3 with `rebar3`
   replaced by the interactive wrapper, git and nix-prefetch-git at the end
-  of its `PATH`, and, under `share/rebar3-purifier`, the nixpkgs, Nix library
-  and command it builds with.
+  of its `PATH`, and, under `share/rebar3-purifier`, the nixpkgs, Nix library,
+  command and shared purifier library it builds with.
 
 ## How the outputs are known
 

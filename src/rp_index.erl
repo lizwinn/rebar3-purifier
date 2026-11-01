@@ -24,9 +24,10 @@
 %% The builder of the cache tree in Nix. The manifest lists one entry per
 %% line, its path in the tree and its store path, separated by a tab. A
 %% file entry, and a git entry without `leaveDotGit`, is linked at its
-%% path. A git entry with `leaveDotGit` is a plain checkout, and its path
-%% gets the repository rp_git rebuilds from it, with the commit object the
-%% entry records and what the lockfile's gitSources record about it.
+%% path. A git entry with `leaveDotGit` is a checkout with the .git
+%% directory the shared purifier library rebuilt, and its path gets a bare
+%% repository of that .git directory, with the tags and branches the
+%% lockfile's gitSources record for it.
 build_cache() ->
     Out = os:getenv("out"),
     {ok, Manifest} = file:read_file(os:getenv("manifestPath")),
@@ -43,8 +44,10 @@ build_cache() ->
             Target = filename:join(Out, Path),
             rp_util:ensure_dir(filename:dirname(Target)),
             case maps:get(Path, Artifacts) of
-                #{<<"git">> := #{<<"leaveDotGit">> := true}} = Artifact ->
-                    rp_git:make_repo(Store, Target, Artifact, maps:get(Path, Sources, #{}));
+                #{<<"git">> := #{<<"leaveDotGit">> := true}} ->
+                    rp_git:bare_repo(
+                        filename:join(Store, ".git"), Target, maps:get(Path, Sources, #{})
+                    );
                 _ ->
                     ok = file:make_symlink(Store, Target)
             end

@@ -23,9 +23,10 @@ export PATH="$toolchain/bin:$PATH"
 # Builds the project in DIR and expects a failure whose output matches the
 # extended regular expression PATTERN.
 expect_failure() {
-  local name=$1 dir=$2 pattern=$3 cli expr
+  local name=$1 dir=$2 pattern=$3 cli purifier expr
   cli=$(readlink -f "$share/cli")
-  expr="let pkgs = import $share/nixpkgs { }; build = pkgs.callPackage $share/nix-lib/build-rebar3-project.nix { rebar3-purifier.cli = builtins.storePath \"$cli\"; }; in (build { src = $dir; }).all"
+  purifier=$(readlink -f "$share/purifier")
+  expr="let pkgs = import $share/nixpkgs { }; build = pkgs.callPackage $share/nix-lib/build-rebar3-project.nix { rebar3-purifier.cli = builtins.storePath \"$cli\"; purifier = import (builtins.storePath \"$purifier\" + \"/nix/lib\") { inherit (pkgs) lib; }; }; in (build { src = $dir; }).all"
   if nix-build --no-out-link -E "$expr" > "$work/$name.log" 2>&1; then
     echo "$name: the build succeeded" >&2
     exit 1
@@ -88,7 +89,7 @@ for a in lock["artifacts"]:
         c["object"] = base64.b64encode(base64.b64decode(c["object"]) + b"tampered\n").decode()
 json.dump(lock, open(path, "w"), indent=2)
 EOF
-expect_failure tampered-commit "$dir" 'commit object of .* hashes to'
+expect_failure tampered-commit "$dir" 'purifier: the git entry at path "git/'
 
 # A lockfile that is not JSON.
 dir=$(fixture malformed)

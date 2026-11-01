@@ -115,9 +115,8 @@ missing_test() ->
     ?assertEqual(["meck (git abc)", "ranch 1.8.0"], rp_check:missing(Dir, Lock)),
     rp_util:rm_rf(Dir).
 
-%% rp_git rebuilds a repository that git clones by tag at the locked
-%% commit, from a checkout with an executable, a symbolic link, nested and
-%% empty directories, and it rejects a checkout that differs.
+%% rp_git makes a bare repository of a .git directory, which git clones by
+%% a recorded tag or branch at the commit HEAD names.
 git_roundtrip_test() ->
     Tmp = tmp_dir("git"),
     Src = filename:join(Tmp, "src"),
@@ -144,24 +143,21 @@ git_roundtrip_test() ->
     Git(Src, ["init", "-q"]),
     Git(Src, ["add", "-A"]),
     Git(Src, ["commit", "-q", "-m", "test"]),
+    Git(Src, ["branch", "-M", "main"]),
     Rev = Git(Src, ["rev-parse", "HEAD"]),
-    Object = base64:encode(list_to_binary(Git(Src, ["cat-file", "commit", Rev]) ++ "\n")),
-    Checkout = filename:join(Tmp, "checkout"),
-    {0, _} = rp_util:run_quiet("cp", ["-a", Src, Checkout], Tmp, []),
-    rp_util:rm_rf(filename:join(Checkout, ".git")),
-    Artifact = #{
-        <<"git">> => #{
-            <<"url">> => <<"https://example.com/t.git">>,
-            <<"rev">> => list_to_binary(Rev),
-            <<"commitObject">> => #{<<"object">> => Object, <<"gitlinks">> => []}
-        }
-    },
     Repo = filename:join(Tmp, "repo"),
-    ok = rp_git:make_repo(Checkout, Repo, Artifact, #{<<"tags">> => [<<"v1">>]}),
-    Git(Tmp, ["clone", "-q", "-b", "v1", "--single-branch", Repo, filename:join(Tmp, "clone")]),
-    ?assertEqual(Rev, Git(filename:join(Tmp, "clone"), ["rev-parse", "HEAD"])),
-    ok = file:write_file(filename:join(Checkout, "a.txt"), <<"changed\n">>),
-    ?assertThrow({fail, _}, rp_git:make_repo(Checkout, filename:join(Tmp, "repo2"), Artifact, #{})),
+    ok = rp_git:bare_repo(
+        filename:join(Src, ".git"),
+        Repo,
+        #{<<"tags">> => [<<"v1">>], <<"branches">> => [<<"stable">>]}
+    ),
+    Git(Tmp, ["clone", "-q", "-b", "v1", "--single-branch", Repo, filename:join(Tmp, "by-tag")]),
+    ?assertEqual(Rev, Git(filename:join(Tmp, "by-tag"), ["rev-parse", "HEAD"])),
+    Git(Tmp, [
+        "clone", "-q", "-b", "stable", "--single-branch", Repo, filename:join(Tmp, "by-branch")
+    ]),
+    ?assertEqual(Rev, Git(filename:join(Tmp, "by-branch"), ["rev-parse", "HEAD"])),
+    ?assertEqual("true", Git(Repo, ["rev-parse", "--is-bare-repository"])),
     rp_util:rm_rf(Tmp).
 
 %% An application whose version comes from git gets the version the lock

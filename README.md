@@ -180,10 +180,13 @@ organization. `--dry-run` builds the tarballs and prints their paths.
   dependencies and checks out a commit, a tag or a branch, so it needs a
   repository. A checkout with its `.git` directory does not hash the same
   way twice, since git packs objects differently from run to run. The
-  lockfile pins a plain checkout and records the raw commit object; the
-  build writes the checkout's files and directories as git objects, writes
-  the commit, and checks that it hashes to the locked revision. The
-  repository is shallow and has the tags and branches rebar3 clones by.
+  lockfile pins a plain checkout and records the raw commit object, and the
+  shared [purifier](https://github.com/nix-purifiers/purifier) library
+  rebuilds a shallow `.git` directory from them and checks that the commit
+  hashes to the locked revision. rebar3-purifier makes a bare repository of
+  it with the tags and branches rebar3 clones by.
+- **Downloads are fetched by the shared purifier library,** whose entry
+  kinds the lockfile uses for every download.
 - **No `REBAR_OFFLINE`.** rebar3 3.28's own offline mode crashes on Hex
   dependencies. The sandbox has no network, and interactive mode points Hex
   at a closed port, so rebar3 falls back to the cached tarballs on its own.

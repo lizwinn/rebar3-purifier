@@ -20,10 +20,16 @@
   nix-prefetch-git,
   path,
   cli,
+  # The source of the shared purifier library; the package overlay passes
+  # the flake's `purifier` input.
+  purifierSrc ? null,
 }:
 let
   inherit (beamPackages) erlang rebar3;
   wrapperArgs = lib.escapeShellArgs [
+    "--set"
+    "REBAR3_PURIFIER_PURIFIER_SRC"
+    "${purifierSrc}"
     "--set"
     "REBAR3_PURIFIER_REBAR3"
     "${rebar3}/bin/rebar3"
@@ -65,9 +71,11 @@ runCommand "rebar3-purifier-toolchain-${rebar3.version}"
     EOF
     chmod +x "$out/bin/rebar3"
     # What the wrapper builds with, for scripts that build a project the
-    # same way: the nixpkgs, the Nix library and the command.
+    # same way: the nixpkgs, the Nix library, the command and the shared
+    # purifier library.
     mkdir -p "$out/share/rebar3-purifier"
     ln -s ${path} "$out/share/rebar3-purifier/nixpkgs"
     ln -s ${../../nix/lib} "$out/share/rebar3-purifier/nix-lib"
     ln -s ${cli} "$out/share/rebar3-purifier/cli"
+    ln -s ${purifierSrc} "$out/share/rebar3-purifier/purifier"
   ''
