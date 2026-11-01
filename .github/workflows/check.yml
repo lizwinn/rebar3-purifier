@@ -123,11 +123,13 @@ jobs:
       - name: Prefetch the fixtures
         run: tests/offline.sh toolchain prefetch "$RUNNER_TEMP/offline"
       - name: Run the everyday loop with no network
-        # The network namespace has only a loopback device. The Nix daemon
-        # is reached through its socket in the file system.
+        # The network namespace has only a loopback device, which starts
+        # down; the releases of the fixtures need it for Erlang
+        # distribution. The Nix daemon is reached through its socket in the
+        # file system.
         run: |
-          sudo unshare --net -- sudo -u "$USER" env "PATH=$PATH" "HOME=$HOME" \
-            tests/offline.sh toolchain loop "$RUNNER_TEMP/offline"
+          sudo unshare --net -- sh -c 'ip link set lo up && exec sudo -u "$0" env "PATH=$1" "HOME=$2" tests/offline.sh toolchain loop "$3"' \
+            "$USER" "$PATH" "$HOME" "$RUNNER_TEMP/offline"
 
   real-world:
     strategy:
