@@ -42,7 +42,8 @@ clones the checkout from, with the tags and branches it clones by.
   the command computes the same way. `cache.nix` is the cache tree, whose
   entries the shared purifier library fetches. `realize.nix` builds the
   tree for interactive mode and `prefetch`, and `build-rebar3-project.nix`
-  is `buildRebar3Project`.
+  is `buildRebar3Project`, a package for `callPackage` that the overlay of
+  the flake adds to the package set.
 - The packages (`pkgs`). `cli` is the rebar3-purifier command, with its unit
   tests run in its build. `toolchain` is Erlang and rebar3 with `rebar3`
   replaced by the interactive wrapper, `elp`, git and nix-prefetch-git at

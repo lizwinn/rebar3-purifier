@@ -1,16 +1,19 @@
 # SPDX-License-Identifier: MIT
 #
 # buildRebar3Project: the sandboxed build of a rebar3 project from the
-# lockfile that `rebar3-purifier lock` writes. The flake publishes it as
-# `lib.rebar3-purifier.buildRebar3Project`:
+# lockfile that `rebar3-purifier lock` writes.
 #
-#   (rebar3-purifier.lib.rebar3-purifier.buildRebar3Project {
-#     inherit pkgs;
-#     src = ./.;
-#   }).packages.release-hello
+# The file is a package for callPackage: the first argument set is what it
+# takes from the package set, and the result is the builder. The overlay of
+# the flake (`overlays.default`) adds it to the package set as
+# `buildRebar3Project`, so a package written for callPackage takes it like
+# any other dependency:
 #
-# The lockfile lists the build's outputs, so every attribute of the result
-# is known at evaluation time. The result has
+#   { buildRebar3Project }: (buildRebar3Project { src = ./.; }).packages.release-hello
+#
+# and `buildRebar3Project.override` replaces what it takes from the set.
+# The lockfile lists the outputs of the build, so every attribute of the
+# result is known at evaluation time. The result has
 #
 #   packages.default            one derivation with every output:
 #                               lib/<app>, releases/<release>,
@@ -30,12 +33,24 @@
 #   cache                       the cache tree of the locked downloads
 {
   lib,
+  # The package set, for the purifier library to fetch with.
+  pkgs,
+  stdenv,
+  runCommand,
+  git,
+  beam,
+  makeWrapper,
+  coreutils,
+  gawk,
+  gnugrep,
+  gnused,
+  hostname,
+  # The rebar3-purifier package scope, whose `cli` is the command.
+  rebar3-purifier,
   # The shared purifier library (`lib.purifier` of its flake).
   purifier,
 }:
 {
-  # The package set to build with.
-  pkgs,
   # The project directory, with rebar.config.
   src,
   # Fetchers in place of nixpkgs' own, such as a fetchurl for a company
@@ -49,7 +64,7 @@
   # release the lock was made with, when nixpkgs has it.
   beamPackages ? null,
   # The rebar3-purifier command.
-  cli ? pkgs.callPackage ../../pkgs/cli { },
+  cli ? rebar3-purifier.cli,
   # The profile releases are built with.
   releaseProfile ? "prod",
   buildInputs ? [ ],
@@ -60,26 +75,13 @@
   srcFilter ? null,
 }:
 let
-  inherit (pkgs)
-    stdenv
-    runCommand
-    git
-    beam
-    makeWrapper
-    coreutils
-    gawk
-    gnugrep
-    gnused
-    hostname
-    ;
-
   readLock = import ./read-lock.nix { inherit lib; };
   # The lock in memory, which checkLock of the purifier library stops at
   # its problems, each naming the command that fixes it.
   lock = purifier.checkLock (readLock {
     inherit src lockFile;
   });
-  entries = purifier.entriesFor pkgs.stdenv.hostPlatform.system lock;
+  entries = purifier.entriesFor stdenv.hostPlatform.system lock;
 
   ofKind = kind: builtins.filter (o: o.kind == kind) (builtins.attrValues lock.outputs);
   outputs = {

@@ -60,7 +60,7 @@ echo "$project: lock took $((SECONDS - start)) s"
 
 cli=$(readlink -f "$share/cli")
 purifier=$(readlink -f "$share/purifier")
-expr="let pkgs = import $share/nixpkgs { }; build = import $share/nix-lib/build-rebar3-project.nix { inherit (pkgs) lib; purifier = import (builtins.storePath \"$purifier\" + \"/nix/lib\") { inherit (pkgs) lib; }; }; in (build { inherit pkgs; cli = builtins.storePath \"$cli\"; src = $src; }).packages.escript-$escript"
+expr="let pkgs = import $share/nixpkgs { }; build = pkgs.callPackage $share/nix-lib/build-rebar3-project.nix { purifier = import (builtins.storePath \"$purifier\" + \"/nix/lib\") { inherit (pkgs) lib; }; rebar3-purifier.cli = builtins.storePath \"$cli\"; }; in (build { src = $src; }).packages.escript-$escript"
 built=$(nix-build --no-out-link -E "$expr")
 "$built/bin/$escript" "${args[@]}"
 echo "$project: sandboxed build: ok"

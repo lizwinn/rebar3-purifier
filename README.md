@@ -17,7 +17,17 @@ nix run github:nix-purifiers/rebar3-purifier -- lock
 ```
 
 This writes `rebar3-purifier.lock.json` next to `rebar.config`, and adds to
-`rebar.lock` what it did not hold. Commit both. Then build from a flake:
+`rebar.lock` what it did not hold. Commit both. The overlay of the flake adds
+`buildRebar3Project` to a package set, where nixpkgs keeps its own builders.
+A package written for `callPackage` takes it by name:
+
+```nix
+# package.nix
+{ buildRebar3Project }:
+(buildRebar3Project { src = ./.; }).packages.release-my_app
+```
+
+Build it from a flake:
 
 ```nix
 {
@@ -27,20 +37,22 @@ This writes `rebar3-purifier.lock.json` next to `rebar.config`, and adds to
   outputs = { nixpkgs, rebar3-purifier, ... }:
     let
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
-      project = rebar3-purifier.lib.rebar3-purifier.buildRebar3Project {
-        inherit pkgs;
-        src = ./.;
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [
+          rebar3-purifier.overlays.default
+          (final: prev: { my_app = final.callPackage ./package.nix { }; })
+        ];
       };
     in
     {
-      packages.${system}.default = project.packages.release-my_app;
-      checks.${system}.tests = project.tests;
+      packages.${system}.default = pkgs.my_app;
+      checks.${system}.tests = (pkgs.buildRebar3Project { src = ./.; }).tests;
     };
 }
 ```
 
-`buildRebar3Project { pkgs, src, fetchers ? { }, ... }` returns:
+`buildRebar3Project { src, lockFile ? ..., fetchers ? { }, ... }` returns:
 
 - `packages.default`, one derivation with every output;
 - `packages.app-<name>`, each application of the project, compiled, in
@@ -62,20 +74,22 @@ This writes `rebar3-purifier.lock.json` next to `rebar.config`, and adds to
 Every attribute name is known at evaluation time, with no
 import-from-derivation. `fetchers` replaces the fetchers of the library,
 for a company mirror or for credentials: `fetchers.fetchurl` is a
-`fetchurl` with them. `lib.rebar3-purifier.readLock { src, lockFile ? ...
-}` reads the lockfiles into the lock in memory of the contract.
+`fetchurl` with them. `buildRebar3Project.override` replaces the packages the
+builder takes from the package set. `lib.rebar3-purifier.readLock { src,
+lockFile ? ... }` reads the lockfiles into the lock in memory that the
+nix-purifiers share.
 
-The other arguments are `lockFile`, `beamPackages` (the
-default is the one of the OTP release the lock was made with, when nixpkgs
-has it), `cli`, `releaseProfile`, `buildInputs`, `nativeBuildInputs` and
-`srcFilter`. `nix/lib/build-rebar3-project.nix` documents them.
+The other arguments are `beamPackages` (the default is the one of the OTP
+release the lock was made with, when nixpkgs has it), `cli`,
+`releaseProfile`, `buildInputs`, `nativeBuildInputs` and `srcFilter`.
+`nix/lib/build-rebar3-project.nix` documents them.
 
 A project whose author does not keep a rebar3-purifier lockfile can be
 built from one kept elsewhere. Pass `lockFile`, and run the commands with
 `--lockfile <path>` or with `REBAR3_PURIFIER_LOCKFILE` set to the path.
 `rebar.lock` is always the one in the project.
 
-## Everyday loop
+## Development loop
 
 `nix develop github:nix-purifiers/rebar3-purifier` gives a shell with
 `rebar3`, the Erlang tools, `elp` and `rebar3-purifier`. Run rebar3 as
@@ -104,14 +118,14 @@ The commands:
   relock of an unchanged project writes the same bytes.
 - `rebar3-purifier update [<package>...]` runs `rebar3 upgrade` on every
   dependency, or on the named ones, and then locks.
-- `rebar3-purifier prefetch` is described under Offline work.
+- `rebar3-purifier prefetch` is described under Working offline.
 - `rebar3-purifier publish [--dry-run] [<application>...]` builds the
   `release` through Nix and uploads those tarballs to Hex with the Hex
   client of rebar3. `HEX_API_KEY` holds the key, `HEX_API_URL` replaces the
   default API (`https://hex.pm/api`), and `HEX_ORGANIZATION` publishes into
   an organization. `--dry-run` builds the tarballs and prints their paths.
 
-## Offline work
+## Working offline
 
 `rebar3-purifier prefetch` realizes in the Nix store everything the
 lockfile lists for the current system: the Hex tarballs and the git
@@ -131,7 +145,7 @@ which loads the project by running rebar3. Run your editor inside
 rebar3 of the toolchain, which reads the locked downloads. After a
 prefetch the editor needs no network.
 
-## Errors and fixes
+## Troubleshooting
 
 Every lockfile problem stops the build and the commands with a message that
 names the command that fixes it, and the same messages appear at Nix
@@ -149,38 +163,35 @@ evaluation.
 
 To move dependencies to newer releases, run `rebar3-purifier update`.
 
-## Sources supported and refused
+## Supported language repositories
 
-Supported:
+The purifier fetches Hex packages from `https://repo.hex.pm`, from
+`HEX_CDN` or `HEX_MIRROR`, from `hexpm:<organization>`, and from a
+repository that `rebar.config` or your global rebar3 configuration names
+under `hex`. The checksum of a Hex package of `rebar.lock` is its outer
+checksum, the SHA-256 of the tarball, and the build checks the download
+against it.
 
-- Hex packages, from `https://repo.hex.pm`, from `HEX_CDN` or
-  `HEX_MIRROR`, from `hexpm:<organization>`, and from a repository that
-  `rebar.config` or your global rebar3 configuration names under `hex`.
-  The checksum of a Hex package of `rebar.lock` is its outer checksum, the
-  SHA-256 of the tarball, and the build checks the download against it.
-- Git dependencies and `git_subdir` dependencies, by commit, tag or
-  branch, and git plugins. The lockfile records the hash of the checkout
-  and the raw commit object, and the build rebuilds the repository from
-  them.
-- Plugins and the dependencies of the `test` and `prod` profiles, and
-  extra profiles with `--profile`.
+It fetches git dependencies and `git_subdir` dependencies by commit, tag or
+branch, and git plugins. The lockfile records the hash of the checkout and
+the raw commit object, and the build rebuilds the repository from them. An
+SSH URL is recorded as the HTTPS URL of the same host, since the Nix
+sandbox has no SSH keys. Git submodules are not checked out, as rebar3 does
+not check them out.
 
-Refused or limited:
+Plugins, the dependencies of the `test` and `prod` profiles, and the
+dependencies of extra profiles added with `--profile` are locked in the same
+way.
 
-- Downloads outside the fetchers of rebar3, such as a plugin or a build
-  hook that downloads files itself, fail in the sandbox. C libraries for
-  NIFs and port drivers come from `buildInputs`, not from the lockfile.
-- Hex repositories that need credentials: the lock run downloads their
-  tarballs with your credentials and adds them to the Nix store, where the
-  build finds them. Another machine needs a `fetchurl` with credentials in
-  `fetchers`.
-- Git submodules are not checked out, as rebar3 does not check them out.
-  An SSH URL is recorded as the HTTPS URL of the same host, since the Nix
-  sandbox has no SSH keys.
-- The global rebar3 configuration of the user is in effect during the lock
-  run, for Hex repositories and credentials, but not in the sandbox. A
-  plugin that only the global configuration names is downloaded by the
-  lock run, and the build does not load it.
+A few limits apply. A plugin or a build hook that downloads files itself
+fails in the sandbox, and C libraries for NIFs and port drivers come from
+`buildInputs`. The lock run downloads tarballs from a Hex repository that
+needs credentials with your credentials and adds them to the Nix store,
+where the build finds them, so another machine needs a `fetchurl` with
+credentials in `fetchers`. Your global rebar3 configuration is in effect
+during the lock run but not in the sandbox, so the lock run downloads a
+plugin that only the global configuration names and the build does not load
+it.
 
 What the lockfile holds, and why `rebar.lock` does not: `rebar.lock` is the
 resolution of the default profile, and it holds the outer checksum of every
@@ -231,11 +242,11 @@ Create `flake.nix` in the checkout:
   outputs = { nixpkgs, rebar3-purifier, ... }:
     let
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
-      project = rebar3-purifier.lib.rebar3-purifier.buildRebar3Project {
-        inherit pkgs;
-        src = ./.;
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ rebar3-purifier.overlays.default ];
       };
+      project = pkgs.buildRebar3Project { src = ./.; };
     in
     {
       packages.${system}.default = project.packages.escript-erlang_ls;
@@ -264,7 +275,7 @@ is `result/bin/elvis`.
 The same steps apply to a project of your own. The package to build is
 `project.packages.release-<name>` for a relx release, `escript-<name>` for
 an escript, or `app-<name>` for an application, and `project.tests` is the
-test run for `checks`.
+test run that goes into `checks`.
 
 ## Credits
 

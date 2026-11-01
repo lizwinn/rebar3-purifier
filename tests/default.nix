@@ -9,27 +9,23 @@
 {
   pkgs,
   overlay,
-  # `lib.rebar3-purifier.buildRebar3Project` of the flake.
-  buildRebar3Project,
   # The source of the shared purifier library.
   purifierSrc,
 }:
 let
   extended = pkgs.extend overlay;
-  inherit (extended) lib runCommand;
+  inherit (extended) lib runCommand buildRebar3Project;
   inherit (extended.rebar3-purifier) cli;
 
   # One application with Hex dependencies and plugins, a git dependency in
   # its test profile, an escript, a release and a Hex package.
   hello = buildRebar3Project {
-    inherit pkgs;
     src = ./fixtures/hello;
   };
 
   # Two applications under apps/, git dependencies at a tag and in a
   # subdirectory of a repository, a plugin from git, and a release of both.
   umbrella = buildRebar3Project {
-    inherit pkgs;
     src = ./fixtures/umbrella;
   };
 
@@ -43,7 +39,6 @@ let
       filter = path: _: !builtins.elem (baseNameOf path) names;
     };
   external = buildRebar3Project {
-    inherit pkgs;
     src = without [ "rebar3-purifier.lock.json" ];
     lockFile = ./fixtures/hello/rebar3-purifier.lock.json;
   };
@@ -82,12 +77,15 @@ let
       pattern ? "rebar3-purifier lock",
     }:
     let
-      nixLib = "import ${pkgs.path}/lib";
-      expr = ''
-        ((import ${../nix/lib}/build-rebar3-project.nix {
-          lib = ${nixLib};
-          purifier = import ${purifierSrc} { lib = ${nixLib}; };
-        }) { pkgs = null; cli = null; src = /. + "$PWD/project"; }).fetches
+      expr = extended.writeText "refused-expression.nix" ''
+        let
+          nixpkgs = import ${pkgs.path} { system = "${pkgs.stdenv.hostPlatform.system}"; };
+          build = nixpkgs.callPackage ${../nix/lib}/build-rebar3-project.nix {
+            purifier = import ${purifierSrc} { inherit (nixpkgs) lib; };
+            rebar3-purifier.cli = null;
+          };
+        in
+        (build { src = /. + (builtins.getEnv "PWD" + "/project"); }).fetches
       '';
     in
     runCommand "conformance-${name}" { nativeBuildInputs = [ extended.nix ]; } ''
@@ -103,7 +101,7 @@ let
       cat command.log
       grep -qF ${lib.escapeShellArg pattern} command.log
       export HOME="$TMPDIR" NIX_STATE_DIR="$TMPDIR/nix/var" NIX_LOG_DIR="$TMPDIR/nix/log"
-      if nix-instantiate --eval --strict --store dummy:// --expr "${expr}" 2> eval.log; then
+      if nix-instantiate --eval --strict --store dummy:// ${expr} 2> eval.log; then
         echo "the evaluation of buildRebar3Project accepted the lockfile" >&2
         exit 1
       fi
