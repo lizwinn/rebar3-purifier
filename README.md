@@ -17,18 +17,33 @@ nix run github:nix-purifiers/rebar3-purifier -- lock
 ```
 
 This writes `rebar3-purifier.lock.json` next to `rebar.config`, and adds to
-`rebar.lock` what it did not hold. Commit both. The overlay of the flake adds
-one attribute to a package set, the scope `rebar3-purifier`. The scope holds
-the builder `buildRebar3Project` beside the command and the toolchain. A
-package written for `callPackage` takes the scope by name:
+`rebar.lock` what it did not hold. Commit both. Then build the project from
+its directory, with no Nix file added to it:
 
-```nix
-# package.nix
-{ rebar3-purifier }:
-(rebar3-purifier.buildRebar3Project { src = ./.; }).packages.release-my_app
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.rebar3-purifier.buildRebar3Project { src = ./.; }).packages.default'
 ```
 
-Build it from a flake:
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
+
+The overlay of the flake adds one attribute to a package set, the scope
+`rebar3-purifier`. The scope holds the builder `buildRebar3Project` beside
+the command and the toolchain. A project whose authors want a flake can
+package itself by calling the builder directly. The flake can live in the
+repository of the project or in another one:
 
 ```nix
 {
@@ -40,15 +55,13 @@ Build it from a flake:
       system = "x86_64-linux";
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [
-          rebar3-purifier.overlays.default
-          (final: prev: { my_app = final.callPackage ./package.nix { }; })
-        ];
+        overlays = [ rebar3-purifier.overlays.default ];
       };
+      project = pkgs.rebar3-purifier.buildRebar3Project { src = ./.; };
     in
     {
-      packages.${system}.default = pkgs.my_app;
-      checks.${system}.tests = (pkgs.rebar3-purifier.buildRebar3Project { src = ./.; }).tests;
+      packages.${system}.default = project.packages.release-my_app;
+      checks.${system}.tests = project.tests;
     };
 }
 ```
@@ -242,41 +255,21 @@ Three more decisions:
 
 [erlang_ls](https://github.com/erlang-ls/erlang_ls) is a language server
 for Erlang, built as an escript. To build it with Nix, clone it, lock it,
-and add a flake to the checkout:
+and build it from the checkout:
 
 ```zsh
 git clone https://github.com/erlang-ls/erlang_ls
 cd erlang_ls
 nix run github:nix-purifiers/rebar3-purifier -- lock
-```
-
-Create `flake.nix` in the checkout:
-
-```nix
-{
-  inputs.rebar3-purifier.url = "github:nix-purifiers/rebar3-purifier";
-  inputs.nixpkgs.follows = "rebar3-purifier/nixpkgs";
-
-  outputs = { nixpkgs, rebar3-purifier, ... }:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ rebar3-purifier.overlays.default ];
-      };
-      project = pkgs.rebar3-purifier.buildRebar3Project { src = ./.; };
-    in
-    {
-      packages.${system}.default = project.packages.escript-erlang_ls;
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
     };
-}
-```
-
-Flakes see only the files that git tracks, so add the new files and build:
-
-```zsh
-git add flake.nix rebar3-purifier.lock.json
-nix build
+  in
+  (pkgs.rebar3-purifier.buildRebar3Project { src = ./.; }).packages.escript-erlang_ls'
 ./result/bin/erlang_ls --version
 ```
 
@@ -284,16 +277,17 @@ nix build
 
 [elvis](https://github.com/inaka/elvis) is a style checker for Erlang, also
 an escript, with Hex plugins. The steps are the same. Clone it, run the
-`lock` command in the checkout, and use the same `flake.nix` with
-`project.packages.escript-elvis` in place of `escript-erlang_ls`. The result
-is `result/bin/elvis`.
+`lock` command in the checkout, and build it with
+`packages.escript-elvis` in place of `packages.escript-erlang_ls`. The
+result is `result/bin/elvis`.
 
 ### Your own project
 
 The same steps apply to a project of your own. The package to build is
-`project.packages.release-<name>` for a relx release, `escript-<name>` for
-an escript, or `app-<name>` for an application, and `project.tests` is the
-test run that goes into `checks`.
+`packages.release-<name>` for a relx release, `packages.escript-<name>` for
+an escript, or `packages.app-<name>` for an application, and the `tests`
+attribute of the builder is the test run that goes into the `checks` of a
+flake.
 
 ## Credits
 
