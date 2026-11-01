@@ -16,12 +16,14 @@
       inherit (libOverlays) default;
     };
 
-    # The packages are the `default` entry of this flake's package overlay
+    # The scope is the `default` entry of this flake's package overlay
     # registry (pkg-overlays/): the package set applies it by default, and
     # the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`.
+    # `overlays.default`. The `packages` output holds the derivations of
+    # the scope (below) and not every attribute of it, since the builder is
+    # a function.
     nixpkgs = {
-      packages.export.enabled = true;
+      packages.export.enabled = false;
     };
   };
 
@@ -31,11 +33,13 @@
   # `nix develop github:nix-purifiers/rebar3-purifier` gives a shell whose
   # `rebar3` runs against the project's locked downloads.
   perSystem =
-    { config, pkgs, ... }:
+    { pkgs, ... }:
     {
-      packages.default = config.packages.toolchain;
+      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.rebar3-purifier // {
+        default = pkgs.rebar3-purifier.toolchain;
+      };
       devShells.default = pkgs.mkShell {
-        packages = [ config.packages.toolchain ];
+        packages = [ pkgs.rebar3-purifier.toolchain ];
       };
     };
 

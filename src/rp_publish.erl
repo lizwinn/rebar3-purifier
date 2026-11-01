@@ -73,7 +73,7 @@ build(#{
         " + \"/nix/lib\") { inherit (pkgs) lib; }; ",
         "build = pkgs.callPackage ",
         nix_string(filename:join(env("REBAR3_PURIFIER_NIX_LIB"), "build-rebar3-project.nix")),
-        " { inherit purifier; rebar3-purifier.cli = builtins.storePath ",
+        " { inherit purifier; cli = builtins.storePath ",
         nix_string(cli_package()),
         "; }; ",
         "in (build { src = builtins.path { path = ",

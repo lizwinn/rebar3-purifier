@@ -18,13 +18,14 @@ nix run github:nix-purifiers/rebar3-purifier -- lock
 
 This writes `rebar3-purifier.lock.json` next to `rebar.config`, and adds to
 `rebar.lock` what it did not hold. Commit both. The overlay of the flake adds
-`buildRebar3Project` to a package set, where nixpkgs keeps its own builders.
-A package written for `callPackage` takes it by name:
+one attribute to a package set, the scope `rebar3-purifier`. The scope holds
+the builder `buildRebar3Project` beside the command and the toolchain. A
+package written for `callPackage` takes the scope by name:
 
 ```nix
 # package.nix
-{ buildRebar3Project }:
-(buildRebar3Project { src = ./.; }).packages.release-my_app
+{ rebar3-purifier }:
+(rebar3-purifier.buildRebar3Project { src = ./.; }).packages.release-my_app
 ```
 
 Build it from a flake:
@@ -47,7 +48,7 @@ Build it from a flake:
     in
     {
       packages.${system}.default = pkgs.my_app;
-      checks.${system}.tests = (pkgs.buildRebar3Project { src = ./.; }).tests;
+      checks.${system}.tests = (pkgs.rebar3-purifier.buildRebar3Project { src = ./.; }).tests;
     };
 }
 ```
@@ -75,7 +76,8 @@ Every attribute name is known at evaluation time, with no
 import-from-derivation. `fetchers` replaces the fetchers of the library,
 for a company mirror or for credentials: `fetchers.fetchurl` is a
 `fetchurl` with them. `buildRebar3Project.override` replaces the packages the
-builder takes from the package set. `lib.rebar3-purifier.readLock { src,
+builder takes, and `rebar3-purifier.overrideScope` replaces what the
+packages of the scope share. `lib.rebar3-purifier.readLock { src,
 lockFile ? ..., rebarLock ? ... }` reads the lockfiles into the lock in
 memory that the nix-purifiers share.
 
@@ -262,7 +264,7 @@ Create `flake.nix` in the checkout:
         inherit system;
         overlays = [ rebar3-purifier.overlays.default ];
       };
-      project = pkgs.buildRebar3Project { src = ./.; };
+      project = pkgs.rebar3-purifier.buildRebar3Project { src = ./.; };
     in
     {
       packages.${system}.default = project.packages.escript-erlang_ls;

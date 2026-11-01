@@ -14,8 +14,8 @@
 }:
 let
   extended = pkgs.extend overlay;
-  inherit (extended) lib runCommand buildRebar3Project;
-  inherit (extended.rebar3-purifier) cli;
+  inherit (extended) lib runCommand;
+  inherit (extended.rebar3-purifier) cli buildRebar3Project;
 
   # One application with Hex dependencies and plugins, a git dependency in
   # its test profile, an escript, a release and a Hex package.
@@ -93,7 +93,7 @@ let
           nixpkgs = import ${pkgs.path} { system = "${pkgs.stdenv.hostPlatform.system}"; };
           build = nixpkgs.callPackage ${../nix/lib}/build-rebar3-project.nix {
             purifier = import ${purifierSrc} { inherit (nixpkgs) lib; };
-            rebar3-purifier.cli = null;
+            cli = null;
           };
         in
         (build { src = /. + (builtins.getEnv "PWD" + "/project"); }).fetches

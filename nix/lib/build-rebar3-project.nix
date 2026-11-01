@@ -4,14 +4,15 @@
 # lockfile that `rebar3-purifier lock` writes.
 #
 # The file is a package for callPackage: the first argument set is what it
-# takes from the package set, and the result is the builder. The overlay of
-# the flake (`overlays.default`) adds it to the package set as
-# `buildRebar3Project`, so a package written for callPackage takes it like
-# any other dependency:
+# takes from the package set and the rebar3-purifier scope, and the result
+# is the builder. The overlay of the flake (`overlays.default`) adds the
+# scope to the package set as `rebar3-purifier`, so a package written for
+# callPackage takes the scope by name:
 #
-#   { buildRebar3Project }: (buildRebar3Project { src = ./.; }).packages.release-hello
+#   { rebar3-purifier }:
+#   (rebar3-purifier.buildRebar3Project { src = ./.; }).packages.release-hello
 #
-# and `buildRebar3Project.override` replaces what it takes from the set.
+# and `buildRebar3Project.override` replaces what the builder takes.
 # The lockfile lists the outputs of the build, so every attribute of the
 # result is known at evaluation time. The result has
 #
@@ -49,11 +50,14 @@
   gnugrep,
   gnused,
   hostname,
-  # The rebar3-purifier package scope, whose `cli` is the command.
-  rebar3-purifier,
+  # The rebar3-purifier command, from the rebar3-purifier scope.
+  cli,
   # The shared purifier library (`lib.purifier` of its flake).
   purifier,
 }:
+let
+  defaultCli = cli;
+in
 {
   # The project directory, with rebar.config.
   src,
@@ -71,7 +75,7 @@
   # release the lock was made with, when nixpkgs has it.
   beamPackages ? null,
   # The rebar3-purifier command.
-  cli ? rebar3-purifier.cli,
+  cli ? defaultCli,
   # The profile releases are built with.
   releaseProfile ? "prod",
   buildInputs ? [ ],

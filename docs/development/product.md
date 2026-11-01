@@ -42,14 +42,17 @@ clones the checkout from, with the tags and branches it clones by.
   and `lock-version.nix` are the content hash and the format version, which
   the command computes the same way. `cache.nix` is the cache tree, whose
   entries the shared purifier library fetches. `realize.nix` builds the
-  tree for interactive mode and `prefetch`, and `build-rebar3-project.nix`
-  is `buildRebar3Project`, a package for `callPackage` that the overlay of
-  the flake adds to the package set.
-- The packages (`pkgs`). `cli` is the rebar3-purifier command, with its unit
-  tests run in its build. `toolchain` is Erlang and rebar3 with `rebar3`
-  replaced by the interactive wrapper, `elp`, git and nix-prefetch-git at
-  the end of its `PATH`, and, under `share/rebar3-purifier`, the nixpkgs,
-  Nix library, command and shared purifier library it builds with.
+  tree for interactive mode and `prefetch`. The file
+  `build-rebar3-project.nix` is the builder `buildRebar3Project`.
+- The packages (`pkgs`), which the overlay of the flake adds to a package
+  set as one scope, `rebar3-purifier`. The scope is made with
+  `lib.makeScope`, and `overrideScope` replaces what its packages share.
+  `cli` is the rebar3-purifier command, with its unit tests run in its
+  build. `toolchain` is Erlang and rebar3 with `rebar3` replaced by the
+  interactive wrapper, `elp`, git and nix-prefetch-git at the end of its
+  `PATH`, and, under `share/rebar3-purifier`, the nixpkgs, Nix library,
+  command and shared purifier library it builds with.
+  `buildRebar3Project` is a package for `callPackage` in the scope.
 
 ## The lockfile
 
