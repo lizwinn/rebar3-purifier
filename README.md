@@ -125,6 +125,12 @@ The commands:
   default API (`https://hex.pm/api`), and `HEX_ORGANIZATION` publishes into
   an organization. `--dry-run` builds the tarballs and prints their paths.
 
+rebar3 has a plugin mechanism, and rebar3-purifier is a separate command
+that runs beside it. `lock` runs rebar3 itself in a copy of the project
+with empty caches, and the `rebar3` of the toolchain sets the Hex and git
+environment before rebar3 starts. A plugin runs inside rebar3, after it has
+read its cache and configuration, so it cannot do either.
+
 ## Working offline
 
 `rebar3-purifier prefetch` realizes in the Nix store everything the
@@ -193,7 +199,8 @@ during the lock run but not in the sandbox, so the lock run downloads a
 plugin that only the global configuration names and the build does not load
 it.
 
-What the lockfile holds, and why `rebar.lock` does not: `rebar.lock` is the
+`rebar.lock` cannot record everything the build downloads, so the purifier
+writes `rebar3-purifier.lock.json` for the rest. `rebar.lock` is the
 resolution of the default profile, and it holds the outer checksum of every
 Hex package in it, so the lockfile does not repeat them. The lockfile holds
 the Hex tarballs that `rebar.lock` does not list (plugins and the other
