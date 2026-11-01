@@ -9,7 +9,13 @@
 # rebar3-purifier command is the builder.
 {
   lib,
-  pkgs,
+  runCommand,
+  fetchurl,
+  fetchgit,
+  unzip,
+  zstd,
+  python3,
+  writeText,
   # The shared purifier library (`lib.purifier` of its flake).
   purifier,
   # Fetchers that replace the nixpkgs fetchers of the same names in the
@@ -22,9 +28,22 @@
   cli,
 }:
 let
-  fetch = purifier.fetchEntry ({ inherit pkgs; } // fetchers);
+  fetch = purifier.fetchEntry (
+    {
+      inherit
+        runCommand
+        fetchurl
+        fetchgit
+        unzip
+        zstd
+        python3
+        writeText
+        ;
+    }
+    // fetchers
+  );
 in
-pkgs.runCommand "rebar3-purifier-cache"
+runCommand "rebar3-purifier-cache"
   {
     manifest = lib.concatMapStrings (e: "${e.path}\t${fetch e}\n") entries;
     entries = builtins.toJSON entries;

@@ -64,14 +64,17 @@ jobs:
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
       - name: Build the toolchain
         run: nix build .#toolchain --out-link toolchain
-      - name: Lock a copy of hello with its lockfile outside it
+      - name: Lock a copy of hello with both lockfiles outside it
         run: |
           mkdir -p "$RUNNER_TEMP/external/locks"
           cp -r tests/fixtures/hello "$RUNNER_TEMP/external/project"
           rm "$RUNNER_TEMP/external/project/rebar3-purifier.lock.json"
           (cd "$RUNNER_TEMP/external/project" &&
-            "$GITHUB_WORKSPACE/toolchain/bin/rebar3-purifier" lock --lockfile ../locks/rebar3-purifier.lock.json)
+            "$GITHUB_WORKSPACE/toolchain/bin/rebar3-purifier" lock \
+              --lockfile ../locks/rebar3-purifier.lock.json \
+              --tool-lockfile ../locks/rebar.lock)
           cmp "$RUNNER_TEMP/external/locks/rebar3-purifier.lock.json" tests/fixtures/hello/rebar3-purifier.lock.json
+          cmp "$RUNNER_TEMP/external/locks/rebar.lock" tests/fixtures/hello/rebar.lock
       - name: Lock the fixtures again
         run: |
           for fixture in hello umbrella outdated; do

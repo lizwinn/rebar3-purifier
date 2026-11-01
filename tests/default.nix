@@ -30,7 +30,8 @@ let
   };
 
   # The hello fixture as a build kept external: its tree holds rebar.lock
-  # and no rebar3-purifier lockfile, which lies outside it.
+  # and no rebar3-purifier lockfile, which lies outside it. `without` is
+  # the tree without the files named.
   without =
     names:
     builtins.path {
@@ -41,6 +42,16 @@ let
   external = buildRebar3Project {
     src = without [ "rebar3-purifier.lock.json" ];
     lockFile = ./fixtures/hello/rebar3-purifier.lock.json;
+  };
+
+  # The same fixture with neither lockfile in its tree: both lie outside.
+  externalBoth = buildRebar3Project {
+    src = without [
+      "rebar3-purifier.lock.json"
+      "rebar.lock"
+    ];
+    lockFile = ./fixtures/hello/rebar3-purifier.lock.json;
+    rebarLock = ./fixtures/hello/rebar.lock;
   };
 
   # Runs a command and compares what it prints.
@@ -231,9 +242,11 @@ in
 
   # A build whose `src` holds no rebar3-purifier lockfile, from the
   # lockfile kept outside it.
-  conformance-external =
-    prints "conformance-external" "${lib.getExe external.packages.escript-hello} Nix"
-      ''{"hello":"Nix"}'';
+  conformance-external = runCommand "conformance-external" { } ''
+    test "$(${lib.getExe external.packages.escript-hello} Nix)" = '{"hello":"Nix"}'
+    test "$(${lib.getExe externalBoth.packages.escript-hello} Nix)" = '{"hello":"Nix"}'
+    touch $out
+  '';
 
   # readLock gives the lock in the shape of the purifier contract, with the
   # outputs under the names of the packages.

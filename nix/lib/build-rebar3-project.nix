@@ -33,10 +33,14 @@
 #   cache                       the cache tree of the locked downloads
 {
   lib,
-  # The package set, for the purifier library to fetch with.
-  pkgs,
   stdenv,
   runCommand,
+  fetchurl,
+  fetchgit,
+  unzip,
+  zstd,
+  python3,
+  writeText,
   git,
   beam,
   makeWrapper,
@@ -57,9 +61,12 @@
   # mirror or with credentials. The purifier library's fetchEntry takes
   # them, with the arguments of the nixpkgs fetchers of the same names.
   fetchers ? { },
-  # The lockfile. It may lie outside `src`, for a project whose author does
-  # not keep one.
+  # The lockfile. It may lie outside `src`, for a build that keeps it
+  # outside the repository.
   lockFile ? src + "/rebar3-purifier.lock.json",
+  # The rebar.lock to build with in place of the rebar.lock in `src`, for a
+  # build that keeps its own copy outside the repository.
+  rebarLock ? src + "/rebar.lock",
   # The BEAM package set to build with. The default is the one of the OTP
   # release the lock was made with, when nixpkgs has it.
   beamPackages ? null,
@@ -79,7 +86,7 @@ let
   # The lock in memory, which checkLock of the purifier library stops at
   # its problems, each naming the command that fixes it.
   lock = purifier.checkLock (readLock {
-    inherit src lockFile;
+    inherit src lockFile rebarLock;
   });
   entries = purifier.entriesFor stdenv.hostPlatform.system lock;
 
@@ -101,7 +108,13 @@ let
   cache = import ./cache.nix {
     inherit
       lib
-      pkgs
+      runCommand
+      fetchurl
+      fetchgit
+      unzip
+      zstd
+      python3
+      writeText
       purifier
       fetchers
       entries
@@ -169,6 +182,10 @@ let
 
     configurePhase = ''
       runHook preConfigure
+      ${lib.optionalString (builtins.pathExists rebarLock) ''
+        cp ${rebarLock} rebar.lock
+        chmod u+w rebar.lock
+      ''}
       ${cli}/bin/rebar3-purifier check . ${lockFile}
       ${cli}/bin/rebar3-purifier pin-versions . ${lockFile}
       export HOME="$TMPDIR/home"

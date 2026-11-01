@@ -76,18 +76,27 @@ import-from-derivation. `fetchers` replaces the fetchers of the library,
 for a company mirror or for credentials: `fetchers.fetchurl` is a
 `fetchurl` with them. `buildRebar3Project.override` replaces the packages the
 builder takes from the package set. `lib.rebar3-purifier.readLock { src,
-lockFile ? ... }` reads the lockfiles into the lock in memory that the
-nix-purifiers share.
+lockFile ? ..., rebarLock ? ... }` reads the lockfiles into the lock in
+memory that the nix-purifiers share.
 
 The other arguments are `beamPackages` (the default is the one of the OTP
 release the lock was made with, when nixpkgs has it), `cli`,
 `releaseProfile`, `buildInputs`, `nativeBuildInputs` and `srcFilter`.
 `nix/lib/build-rebar3-project.nix` documents them.
 
-A project whose author does not keep a rebar3-purifier lockfile can be
-built from one kept elsewhere. Pass `lockFile`, and run the commands with
-`--lockfile <path>` or with `REBAR3_PURIFIER_LOCKFILE` set to the path.
-`rebar.lock` is always the one in the project.
+We recommend committing both `rebar3-purifier.lock.json` and `rebar.lock`
+to the repository. The builder and the commands look for them there.
+
+A build can instead keep the lockfiles outside the repository, for a
+project whose committed lockfiles are missing or stale. The flake that
+calls the builder passes `lockFile`, and `rebarLock` when it also keeps a
+copy of `rebar.lock`, and the build uses them in place of the copies in
+`src`. The commands take `--lockfile <path>` and `--tool-lockfile <path>`,
+or the variables `REBAR3_PURIFIER_LOCKFILE` and
+`REBAR3_PURIFIER_TOOL_LOCKFILE`. With either, `lock` and `update` write
+the lockfile at that path and leave the copy in the tree as it is, and
+`lock` starts from the copy of `rebar.lock` in the tree while the one
+outside does not exist.
 
 ## Development loop
 

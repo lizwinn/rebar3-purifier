@@ -68,19 +68,30 @@ grep -q 'not valid JSON.*rebar3-purifier lock' "$work/error"
 # REBAR3_PURIFIER=0 turns interactive mode off.
 test -z "$(REBAR3_PURIFIER=0 rebar3-purifier env)"
 
-# A project without a rebar3-purifier lockfile, which lies outside it:
-# `--lockfile` for the commands, and REBAR3_PURIFIER_LOCKFILE for the
-# interactive rebar3.
+# A build that keeps both lockfiles outside the project: `--lockfile` and
+# `--tool-lockfile` for the commands, and REBAR3_PURIFIER_LOCKFILE and
+# REBAR3_PURIFIER_TOOL_LOCKFILE for the interactive rebar3. `lock` starts
+# from the rebar.lock in the project, writes both lockfiles outside it, and
+# leaves the rebar.lock in the project as it is.
 mkdir -p "$work/external/locks"
-cp "$here/fixtures/hello/rebar3-purifier.lock.json" "$work/external/locks/"
 cp -r "$here/fixtures/hello" "$work/external/project"
 chmod -R u+w "$work/external"
 rm "$work/external/project/rebar3-purifier.lock.json"
 cd "$work/external/project"
-rebar3-purifier prefetch --lockfile ../locks/rebar3-purifier.lock.json
-REBAR3_PURIFIER_LOCKFILE=../locks/rebar3-purifier.lock.json offline rebar3 escriptize
+cp rebar.lock "$work/external/rebar.lock.before"
+rebar3-purifier lock --lockfile ../locks/rebar3-purifier.lock.json \
+  --tool-lockfile ../locks/rebar.lock
+cmp ../locks/rebar3-purifier.lock.json "$here/fixtures/hello/rebar3-purifier.lock.json"
+cmp ../locks/rebar.lock "$here/fixtures/hello/rebar.lock"
+cmp rebar.lock "$work/external/rebar.lock.before"
+rebar3-purifier prefetch --lockfile ../locks/rebar3-purifier.lock.json \
+  --tool-lockfile ../locks/rebar.lock
+export REBAR3_PURIFIER_LOCKFILE=../locks/rebar3-purifier.lock.json
+export REBAR3_PURIFIER_TOOL_LOCKFILE=../locks/rebar.lock
+offline rebar3 escriptize
+unset REBAR3_PURIFIER_LOCKFILE REBAR3_PURIFIER_TOOL_LOCKFILE
 test "$(_build/default/bin/hello Nix)" = '{"hello":"Nix"}'
-echo "external lockfile: ok"
+echo "external lockfiles: ok"
 
 # umbrella: git dependencies at a tag and in a subdirectory, and a plugin
 # from git, all cloned from the repositories rebuilt in the store.

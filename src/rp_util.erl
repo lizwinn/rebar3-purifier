@@ -42,34 +42,49 @@ lock_version() -> 2.
 lock_file(Root) -> filename:join(Root, "rebar3-purifier.lock.json").
 
 %% The project a command works on, from its arguments: the current
-%% directory, and the lockfile that `--lockfile PATH` names, or else
-%% REBAR3_PURIFIER_LOCKFILE, or else the one in the project. The
-%% rebar.lock is always the one in the project. The garbage-collector
-%% roots of `prefetch` and of the interactive rebar3 lie beside the
-%% lockfile. Returns the project and the other arguments.
+%% directory, the lockfile that `--lockfile PATH` names, or else
+%% REBAR3_PURIFIER_LOCKFILE, or else the one in the project, and the
+%% rebar.lock that `--tool-lockfile PATH` names, or else
+%% REBAR3_PURIFIER_TOOL_LOCKFILE, or else the one in the project. With
+%% `--tool-lockfile`, `lock` and `update` write rebar.lock there and leave
+%% the one in the project as it is, and `lock` starts from the one in the
+%% project while the other does not exist. The garbage-collector roots of
+%% `prefetch` and of the interactive rebar3 lie beside the lockfile.
+%% Returns the project and the other arguments.
 project(Args) ->
     {ok, Root} = file:get_cwd(),
-    {LockFile, Rest} =
-        case lists:splitwith(fun(A) -> A =/= "--lockfile" end, Args) of
-            {Before, ["--lockfile", Path | After]} ->
-                {filename:absname(Path), Before ++ After};
-            {_, ["--lockfile"]} ->
-                fail("--lockfile needs a path", []);
-            {_, []} ->
-                case os:getenv("REBAR3_PURIFIER_LOCKFILE") of
-                    Env when Env =:= false; Env =:= "" -> {lock_file(Root), Args};
-                    Env -> {filename:absname(Env), Args}
-                end
-        end,
+    {LockFile, Rest1} = path_option(
+        Args, "--lockfile", "REBAR3_PURIFIER_LOCKFILE", lock_file(Root)
+    ),
+    InTree = filename:join(Root, "rebar.lock"),
+    {RebarLock, Rest} = path_option(
+        Rest1, "--tool-lockfile", "REBAR3_PURIFIER_TOOL_LOCKFILE", InTree
+    ),
     {
         #{
             root => Root,
             lock_file => LockFile,
-            rebar_lock => filename:join(Root, "rebar.lock"),
+            rebar_lock => RebarLock,
+            tree_rebar_lock => InTree,
             gc_roots => filename:join(filename:dirname(LockFile), ".rebar3-purifier-gcroots")
         },
         Rest
     }.
+
+%% The absolute path that the option Option names in Args, or else the
+%% environment variable Var, or else Default, and the other arguments.
+path_option(Args, Option, Var, Default) ->
+    case lists:splitwith(fun(A) -> A =/= Option end, Args) of
+        {Before, [Option, Path | After]} ->
+            {filename:absname(Path), Before ++ After};
+        {_, [Option]} ->
+            fail("~ts needs a path", [Option]);
+        {_, []} ->
+            case os:getenv(Var) of
+                Env when Env =:= false; Env =:= "" -> {Default, Args};
+                Env -> {filename:absname(Env), Args}
+            end
+    end.
 
 -spec fail(io:format(), [term()]) -> no_return().
 fail(Format, Args) ->

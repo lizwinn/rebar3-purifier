@@ -116,14 +116,15 @@ copy_project(Root, Project) ->
     ).
 
 %% When the lock run resolved dependencies rebar.lock did not hold, the
-%% build needs that resolution, so it goes to the rebar.lock in the
-%% project.
+%% build needs that resolution, so it goes to the rebar.lock the project
+%% uses: the one in the tree, or the one that `--tool-lockfile` names.
 update_rebar_lock(RebarLock, Project) ->
     New = filename:join(Project, "rebar.lock"),
     case {file:read_file(New), file:read_file(RebarLock)} of
         {{ok, Same}, {ok, Same}} ->
             ok;
         {{ok, Bin}, _} ->
+            rp_util:ensure_dir(filename:dirname(RebarLock)),
             ok = file:write_file(RebarLock, Bin),
             io:format(
                 standard_error,

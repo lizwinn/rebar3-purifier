@@ -32,9 +32,10 @@ clones the checkout from, with the tags and branches it clones by.
   the sandbox before rebar3, in interactive mode, in `prefetch` and in
   `publish`. `rp_versions` pins versions that come from git. `rp_wrapper`
   is interactive mode and `prefetch`, and `rp_publish` is
-  `rebar3-purifier publish`. `rp_util` holds what they share, including
-  the lockfile with its content hash, the project and its `--lockfile`, and
-  the readers of `rebar.lock`. `rp_tests` holds the unit tests.
+  `rebar3-purifier publish`. `rp_util` holds what they share. It reads and
+  writes the lockfile with its content hash, finds the project from the
+  arguments `--lockfile` and `--tool-lockfile` and the variables that stand
+  for them, and reads `rebar.lock`. `rp_tests` holds the unit tests.
 - The Nix library (`nix/lib`). `read-lock.nix` is `readLock`, which reads
   the lockfile and `rebar.lock` into the lock in memory of the contract,
   with the problems of a lockfile that cannot be used. `content-hash.nix`
