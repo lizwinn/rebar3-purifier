@@ -6,7 +6,7 @@
 %% the build produces in rebar3-purifier.lock.json.
 -module(rp_lock).
 
--export([lock/2, repo_url/2, global_config_dir/0, https_url/1]).
+-export([lock/2, repo_url/2, global_config_dir/0, https_url/1, hex_entries/2]).
 
 -define(DEFAULT_PROFILES, ["default", "test", "prod"]).
 
@@ -228,7 +228,7 @@ git_entries(Project) ->
      || {U, R} <- lists:usort([{U, R} || {U, R, _, _} <- Repos])
     ]),
     Entries = [
-        git_entry(Url, Rev, element(1, maps:get(Rev, Commits)))
+        git_entry(Url, Rev, maps:get(Rev, Commits))
      || {Url, Rev} <- lists:usort([{https_url(U), R} || {U, R, _, _} <- Repos])
     ],
     %% rebar3 clones a branch or a tag with `git clone -b`, so the clone
@@ -244,8 +244,7 @@ git_entries(Project) ->
             url => list_to_binary(U),
             path => <<"git/", (list_to_binary(R))/binary>>,
             tags => lists:usort([list_to_binary(T) || {Ts, _} <- Refs, T <- Ts]),
-            branches => lists:usort([list_to_binary(B) || {_, Bs} <- Refs, B <- Bs]),
-            gitlinks => element(2, maps:get(R, Commits))
+            branches => lists:usort([list_to_binary(B) || {_, Bs} <- Refs, B <- Bs])
         }
      || {U, R} := Refs <- maps:iterator(Grouped, ordered)
     ],
@@ -275,8 +274,9 @@ git_out(Dir, Args) ->
 
 %% A git entry of the shared library's shape. `hash` is of the plain
 %% checkout, and `leaveDotGit` with `commitObject` asks for the .git
-%% directory rebuilt from it.
-git_entry(Url, Rev, CommitObject) ->
+%% directory rebuilt from it: `object` is the raw commit object, base64,
+%% and `gitlinks` the submodule entries of its tree.
+git_entry(Url, Rev, {Object, Gitlinks}) ->
     io:format(standard_error, "rebar3-purifier: hashing ~ts at ~ts~n", [Url, Rev]),
     {ok, Cwd} = file:get_cwd(),
     case rp_util:run_quiet("nix-prefetch-git", ["--url", Url, "--rev", Rev, "--quiet"], Cwd, []) of
@@ -289,7 +289,7 @@ git_entry(Url, Rev, CommitObject) ->
                     rev => list_to_binary(Rev),
                     submodules => false,
                     leaveDotGit => true,
-                    commitObject => CommitObject
+                    commitObject => #{object => Object, gitlinks => Gitlinks}
                 },
                 hash => Hash
             };

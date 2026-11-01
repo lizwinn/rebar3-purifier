@@ -9,6 +9,7 @@
   stdenv,
   beamPackages,
   runtimeShell,
+  git,
 }:
 let
   inherit (beamPackages) erlang rebar3;
@@ -35,6 +36,8 @@ stdenv.mkDerivation {
   '';
 
   doCheck = true;
+  # The repository round trip of rp_tests runs git.
+  nativeCheckInputs = [ git ];
   checkPhase = ''
     runHook preCheck
     erl -noshell -pa ebin $(printf ' -pa %s' rebar3-lib/*/ebin) -eval '

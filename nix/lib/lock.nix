@@ -4,7 +4,9 @@
 # `lockFile` is a path.
 { lockFile }:
 let
-  lock = builtins.fromJSON (builtins.readFile lockFile);
+  lock = builtins.addErrorContext "while reading the rebar3-purifier lockfile ${toString lockFile}; if it is not valid JSON, restore it from version control or run `rebar3-purifier relock`" (
+    builtins.fromJSON (builtins.readFile lockFile)
+  );
 
   supportedVersion = import ./lock-version.nix;
 

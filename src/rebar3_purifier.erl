@@ -18,6 +18,8 @@ usage() ->
     "                          wrapper)\n"
     "  publish [APP]...        publish the Hex packages Nix built\n"
     "  build-cache             the builder of the cache tree (in Nix)\n"
+    "  check DIR LOCKFILE      check that the lockfile fits the build in DIR\n"
+    "                          (in Nix, before rebar3 runs)\n"
     "  index DIR               write the package index and etags of the Hex\n"
     "                          tarballs under DIR/hex\n".
 
@@ -39,6 +41,7 @@ run(["env"]) -> rp_wrapper:env();
 run(["publish" | Rest]) -> rp_publish:publish(Rest);
 run(["build-cache"]) -> rp_index:build_cache();
 run(["index", Dir]) -> rp_index:index(Dir);
+run(["check", Dir, LockFile]) -> rp_check:check(Dir, LockFile);
 run(["help"]) -> io:put_chars(usage()), ok;
 run(_) ->
     io:put_chars(standard_error, usage()),

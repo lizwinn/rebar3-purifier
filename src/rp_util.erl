@@ -94,10 +94,18 @@ hex_md5(Bin) ->
 read_lock(File) ->
     case file:read_file(File) of
         {ok, Bin} ->
-            Lock = json:decode(Bin),
-            case maps:get(<<"version">>, Lock, undefined) =:= lock_version() of
-                true -> {ok, Lock};
-                false -> {error, version}
+            Current = lock_version(),
+            try json:decode(Bin) of
+                #{<<"version">> := Current} = Lock ->
+                    {ok, Lock};
+                #{<<"version">> := _} ->
+                    {error, version};
+                _ ->
+                    fail("~ts is not a rebar3-purifier lockfile; run `rebar3-purifier relock`", [File])
+            catch
+                error:_ ->
+                    fail("~ts is not valid JSON; restore it from version control or run "
+                         "`rebar3-purifier relock`", [File])
             end;
         {error, enoent} ->
             {error, enoent}

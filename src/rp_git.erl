@@ -21,16 +21,17 @@
 -export([make_repo/4, commit_info/2]).
 
 %% Writes a bare repository at Dest from the checkout at Checkout, for the
-%% git entry Artifact of a lockfile, with the commit object it records.
-%% Source is the entry's record in gitSources, with the tags, branches and
-%% submodule entries, or an empty map.
+%% git entry Artifact of a lockfile, with the commit object and submodule
+%% entries it records. Source is the entry's record in gitSources, with the
+%% tags and branches, or an empty map.
 make_repo(Checkout, Dest, #{<<"git">> := Git}, Source) ->
     Rev = binary_to_list(maps:get(<<"rev">>, Git)),
     Url = maps:get(<<"url">>, Git),
-    Commit = base64:decode(maps:get(<<"commitObject">>, Git)),
+    #{<<"object">> := Object} = CommitObject = maps:get(<<"commitObject">>, Git),
+    Commit = base64:decode(Object),
     Gitlinks = maps:from_list([
         {P, hex_to_raw(R)}
-     || #{<<"path">> := P, <<"rev">> := R} <- maps:get(<<"gitlinks">>, Source, [])
+     || #{<<"path">> := P, <<"rev">> := R} <- maps:get(<<"gitlinks">>, CommitObject, [])
     ]),
     rp_util:ensure_dir(filename:join(Dest, "objects")),
     Tree = write_tree(Checkout, <<>>, Gitlinks, Dest),

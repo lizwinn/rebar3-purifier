@@ -142,6 +142,7 @@ let
     # The cache is a writable copy, since rebar3 writes into it.
     configurePhase = ''
       runHook preConfigure
+      ${cli}/bin/rebar3-purifier check . ${lockFile}
       export HOME="$TMPDIR/home"
       export REBAR_GLOBAL_CONFIG_DIR="$TMPDIR/rebar3-global"
       export REBAR_CACHE_DIR="$TMPDIR/rebar3-cache"

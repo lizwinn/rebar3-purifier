@@ -64,4 +64,10 @@ runCommand "rebar3-purifier-toolchain-${rebar3.version}"
     exec ${rebar3}/bin/rebar3 "\$@"
     EOF
     chmod +x "$out/bin/rebar3"
+    # What the wrapper builds with, for scripts that build a project the
+    # same way: the nixpkgs, the Nix library and the command.
+    mkdir -p "$out/share/rebar3-purifier"
+    ln -s ${path} "$out/share/rebar3-purifier/nixpkgs"
+    ln -s ${../../nix/lib} "$out/share/rebar3-purifier/nix-lib"
+    ln -s ${cli} "$out/share/rebar3-purifier/cli"
   ''
