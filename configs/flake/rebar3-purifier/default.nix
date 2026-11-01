@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-{ ... }:
+{ closure-lib, ... }:
 {
   config,
   inputs,
@@ -8,7 +8,12 @@
 }:
 {
 
-  imports = [ inputs.flake-parts.flakeModules.partitions ];
+  imports = [
+    inputs.flake-parts.flakeModules.partitions
+    # The `packages` output holds the derivations of the scope.
+    closure-lib.caisson.modules.flake."purifier/purifier-packages"
+  ];
+  purifier.scope = "rebar3-purifier";
 
   debug = false;
   caisson = {
@@ -19,12 +24,7 @@
     # The scope is the `default` entry of this flake's package overlay
     # registry (pkg-overlays/): the package set applies it by default, and
     # the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`. The `packages` output holds the derivations of
-    # the scope (below) and not every attribute of it, since the builder is
-    # a function.
-    nixpkgs = {
-      packages.export.enabled = false;
-    };
+    # `overlays.default`.
   };
 
   # `nix run github:nix-purifiers/rebar3-purifier -- lock` locks the rebar3
@@ -35,9 +35,7 @@
   perSystem =
     { pkgs, ... }:
     {
-      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.rebar3-purifier // {
-        default = pkgs.rebar3-purifier.toolchain;
-      };
+      packages.default = pkgs.rebar3-purifier.toolchain;
       devShells.default = pkgs.mkShell {
         packages = [ pkgs.rebar3-purifier.toolchain ];
       };
