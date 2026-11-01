@@ -38,8 +38,6 @@
   # The lockfile. It may lie outside `src`, and then takes the place of any
   # lockfile in `src`.
   lockFile ? src + "/rebar3-purifier.lock.json",
-  # The rebar.lock of the build, for a project without one in `src`.
-  rebarLock ? null,
 }:
 let
   inherit (lib)
@@ -81,7 +79,7 @@ let
   # finds them: rebar.config and its script, rebar.lock, and the
   # rebar.config of each application under apps/ or lib/ that has a
   # src/*.app.src.
-  rebarLockFile = if rebarLock != null then rebarLock else src + "/rebar.lock";
+  rebarLockFile = src + "/rebar.lock";
   has = f: builtins.pathExists (src + "/${f}");
   isDir = f: has f && builtins.readFileType (src + "/${f}") == "directory";
   isApp =

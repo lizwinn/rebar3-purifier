@@ -51,14 +51,9 @@ publish(Args) ->
 
 %% The `release` of buildRebar3Project, built from the project directory,
 %% with a GC root under _build/rebar3-purifier.
-build(#{root := Root, lock_file := LockFile, rebar_lock := RebarLock}) ->
+build(#{root := Root, lock_file := LockFile}) ->
     Link = filename:join([Root, "_build", "rebar3-purifier", "publish"]),
     rp_util:ensure_dir(filename:dirname(Link)),
-    RebarLockArg =
-        case RebarLock =:= filename:join(Root, "rebar.lock") of
-            true -> "";
-            false -> ["rebarLock = ", nix_path(RebarLock), "; "]
-        end,
     Expr = iolist_to_binary([
         "let pkgs = import ",
         nix_string(env("REBAR3_PURIFIER_NIXPKGS")),
@@ -77,9 +72,7 @@ build(#{root := Root, lock_file := LockFile, rebar_lock := RebarLock}) ->
         "filter = p: t: !builtins.elem (baseNameOf p) [ \"_build\" \".git\" \".rebar3-purifier-gcroots\" ]; }; ",
         "lockFile = ",
         nix_path(LockFile),
-        "; ",
-        RebarLockArg,
-        "}).release"
+        "; }).release"
     ]),
     case rp_util:run("nix-build", ["-E", binary_to_list(Expr), "--out-link", Link], Root, []) of
         {0, _} ->

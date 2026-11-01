@@ -67,16 +67,15 @@ for a company mirror or for credentials: `fetchers.fetchurl` is a
 `fetchurl` with them. `lib.rebar3-purifier.readLock { src, lockFile ? ...
 }` reads the lockfiles into the lock in memory of the contract.
 
-The other arguments are `lockFile`, `rebarLock`, `beamPackages` (the
+The other arguments are `lockFile`, `beamPackages` (the
 default is the one of the OTP release the lock was made with, when nixpkgs
 has it), `cli`, `releaseProfile`, `buildInputs`, `nativeBuildInputs` and
 `srcFilter`. `nix/lib/build-rebar3-project.nix` documents them.
 
-A project whose author does not keep a lockfile can be built from one kept
-elsewhere. Pass `lockFile` (and `rebarLock` when the source holds no
-`rebar.lock`), and run the commands with `--lockfile <path>` or with
-`REBAR3_PURIFIER_LOCKFILE` set to the path. `lock --lockfile` writes
-`rebar.lock` beside the lockfile in that case.
+A project whose author does not keep a rebar3-purifier lockfile can be
+built from one kept elsewhere. Pass `lockFile`, and run the commands with
+`--lockfile <path>` or with `REBAR3_PURIFIER_LOCKFILE` set to the path.
+`rebar.lock` is always the one in the project.
 
 ## Everyday loop
 

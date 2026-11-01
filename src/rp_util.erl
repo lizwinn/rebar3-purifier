@@ -43,12 +43,10 @@ lock_file(Root) -> filename:join(Root, "rebar3-purifier.lock.json").
 
 %% The project a command works on, from its arguments: the current
 %% directory, and the lockfile that `--lockfile PATH` names, or else
-%% REBAR3_PURIFIER_LOCKFILE, or else the one in the project. The build
-%% uses the rebar.lock of the project. A project without one keeps its
-%% rebar.lock beside a lockfile outside the project, where `lock` writes
-%% it. The garbage-collector roots of `prefetch` and of the interactive
-%% rebar3 lie beside the lockfile. Returns the project and the other
-%% arguments.
+%% REBAR3_PURIFIER_LOCKFILE, or else the one in the project. The
+%% rebar.lock is always the one in the project. The garbage-collector
+%% roots of `prefetch` and of the interactive rebar3 lie beside the
+%% lockfile. Returns the project and the other arguments.
 project(Args) ->
     {ok, Root} = file:get_cwd(),
     {LockFile, Rest} =
@@ -63,17 +61,11 @@ project(Args) ->
                     Env -> {filename:absname(Env), Args}
                 end
         end,
-    InProject = filename:join(Root, "rebar.lock"),
-    RebarLock =
-        case LockFile =/= lock_file(Root) andalso not filelib:is_regular(InProject) of
-            true -> filename:join(filename:dirname(LockFile), "rebar.lock");
-            false -> InProject
-        end,
     {
         #{
             root => Root,
             lock_file => LockFile,
-            rebar_lock => RebarLock,
+            rebar_lock => filename:join(Root, "rebar.lock"),
             gc_roots => filename:join(filename:dirname(LockFile), ".rebar3-purifier-gcroots")
         },
         Rest
@@ -255,8 +247,7 @@ to_bin(I) when is_integer(I) -> integer_to_binary(I).
 
 %% The files that define the build's dependencies: rebar.config, its
 %% script, rebar.lock, and the rebar.config of every application, as paths
-%% relative to Root, sorted. RebarLock is the rebar.lock the build uses,
-%% which may lie outside Root.
+%% relative to Root, sorted. RebarLock is the path of rebar.lock in Root.
 definition_files(Root, RebarLock) ->
     Top = [
         F

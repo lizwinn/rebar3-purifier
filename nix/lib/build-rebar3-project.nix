@@ -45,10 +45,6 @@
   # The lockfile. It may lie outside `src`, for a project whose author does
   # not keep one.
   lockFile ? src + "/rebar3-purifier.lock.json",
-  # The rebar.lock to build with, in place of the rebar.lock in `src`, for
-  # a project without one. `rebar3-purifier lock --lockfile` writes it
-  # beside the lockfile.
-  rebarLock ? null,
   # The BEAM package set to build with. The default is the one of the OTP
   # release the lock was made with, when nixpkgs has it.
   beamPackages ? null,
@@ -81,7 +77,7 @@ let
   # The lock in memory, which checkLock of the purifier library stops at
   # its problems, each naming the command that fixes it.
   lock = purifier.checkLock (readLock {
-    inherit src lockFile rebarLock;
+    inherit src lockFile;
   });
   entries = purifier.entriesFor pkgs.stdenv.hostPlatform.system lock;
 
@@ -171,10 +167,6 @@ let
 
     configurePhase = ''
       runHook preConfigure
-      ${lib.optionalString (rebarLock != null) ''
-        cp ${rebarLock} rebar.lock
-        chmod u+w rebar.lock
-      ''}
       ${cli}/bin/rebar3-purifier check . ${lockFile}
       ${cli}/bin/rebar3-purifier pin-versions . ${lockFile}
       export HOME="$TMPDIR/home"

@@ -69,36 +69,30 @@ prepare(#{root := Root} = Project) ->
 
 %% Builds the cache tree of the lockfile through Nix, with one GC root
 %% under _build/rebar3-purifier, and returns its store path.
-realize(#{root := Root, lock_file := LockFile, rebar_lock := RebarLock, gc_roots := Roots}) ->
+realize(#{root := Root, lock_file := LockFile, gc_roots := Roots}) ->
     Link = filename:join(Roots, "cache"),
     rp_util:ensure_dir(Roots),
-    RebarLockArgs =
-        case RebarLock =:= filename:join(Root, "rebar.lock") of
-            true -> [];
-            false -> ["--arg", "rebarLock", RebarLock]
-        end,
     Args =
-        RebarLockArgs ++
-            [
-                filename:join(env_var("REBAR3_PURIFIER_NIX_LIB"), "realize.nix"),
-                "--arg",
-                "src",
-                Root,
-                "--arg",
-                "lockFile",
-                LockFile,
-                "--argstr",
-                "cli",
-                env_var("REBAR3_PURIFIER_CLI"),
-                "--arg",
-                "nixpkgs",
-                env_var("REBAR3_PURIFIER_NIXPKGS"),
-                "--argstr",
-                "purifierSrc",
-                env_var("REBAR3_PURIFIER_PURIFIER_SRC"),
-                "--out-link",
-                Link
-            ],
+        [
+            filename:join(env_var("REBAR3_PURIFIER_NIX_LIB"), "realize.nix"),
+            "--arg",
+            "src",
+            Root,
+            "--arg",
+            "lockFile",
+            LockFile,
+            "--argstr",
+            "cli",
+            env_var("REBAR3_PURIFIER_CLI"),
+            "--arg",
+            "nixpkgs",
+            env_var("REBAR3_PURIFIER_NIXPKGS"),
+            "--argstr",
+            "purifierSrc",
+            env_var("REBAR3_PURIFIER_PURIFIER_SRC"),
+            "--out-link",
+            Link
+        ],
     case rp_util:run_quiet("nix-build", Args, Root, []) of
         {0, _} ->
             {ok, Tree} = file:read_link_all(Link),

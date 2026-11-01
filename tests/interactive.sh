@@ -68,14 +68,14 @@ grep -q 'not valid JSON.*rebar3-purifier lock' "$work/error"
 # REBAR3_PURIFIER=0 turns interactive mode off.
 test -z "$(REBAR3_PURIFIER=0 rebar3-purifier env)"
 
-# A project without lockfiles, with the lockfile and rebar.lock kept
-# outside it: `--lockfile` for the commands, and REBAR3_PURIFIER_LOCKFILE
-# for the interactive rebar3.
+# A project without a rebar3-purifier lockfile, which lies outside it:
+# `--lockfile` for the commands, and REBAR3_PURIFIER_LOCKFILE for the
+# interactive rebar3.
 mkdir -p "$work/external/locks"
-cp "$here/fixtures/hello/rebar3-purifier.lock.json" "$here/fixtures/hello/rebar.lock" "$work/external/locks/"
+cp "$here/fixtures/hello/rebar3-purifier.lock.json" "$work/external/locks/"
 cp -r "$here/fixtures/hello" "$work/external/project"
 chmod -R u+w "$work/external"
-rm "$work/external/project/rebar3-purifier.lock.json" "$work/external/project/rebar.lock"
+rm "$work/external/project/rebar3-purifier.lock.json"
 cd "$work/external/project"
 rebar3-purifier prefetch --lockfile ../locks/rebar3-purifier.lock.json
 REBAR3_PURIFIER_LOCKFILE=../locks/rebar3-purifier.lock.json offline rebar3 escriptize

@@ -48,18 +48,6 @@ let
     lockFile = ./fixtures/hello/rebar3-purifier.lock.json;
   };
 
-  # The hello fixture without rebar.lock either, which lies outside it
-  # with the lockfile.
-  externalRebarLock = buildRebar3Project {
-    inherit pkgs;
-    src = without [
-      "rebar3-purifier.lock.json"
-      "rebar.lock"
-    ];
-    lockFile = ./fixtures/hello/rebar3-purifier.lock.json;
-    rebarLock = ./fixtures/hello/rebar.lock;
-  };
-
   # Runs a command and compares what it prints.
   prints =
     name: command: expected:
@@ -247,12 +235,6 @@ in
   # lockfile kept outside it.
   conformance-external =
     prints "conformance-external" "${lib.getExe external.packages.escript-hello} Nix"
-      ''{"hello":"Nix"}'';
-
-  # A build whose `src` holds no rebar.lock either, from the rebar.lock
-  # passed as `rebarLock`.
-  fixture-hello-rebar-lock =
-    prints "fixture-hello-rebar-lock" "${lib.getExe externalRebarLock.packages.escript-hello} Nix"
       ''{"hello":"Nix"}'';
 
   # readLock gives the lock in the shape of the purifier contract, with the

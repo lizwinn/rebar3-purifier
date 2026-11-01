@@ -9,9 +9,6 @@
   src,
   # The lockfile, as an absolute path.
   lockFile,
-  # The rebar.lock beside a lockfile outside the project, as an absolute
-  # path, when the project has none.
-  rebarLock ? null,
   # The rebar3-purifier command, as an absolute path into the store.
   cli,
   # The nixpkgs to fetch with.
@@ -30,7 +27,7 @@ assert match != null || throw "rebar3-purifier: the command ${cli} is not in the
 import ./cache.nix {
   inherit lib pkgs purifier;
   entries = purifier.entriesFor pkgs.stdenv.hostPlatform.system (readLock {
-    inherit src lockFile rebarLock;
+    inherit src lockFile;
   });
   cli = builtins.storePath (builtins.head match);
 }
