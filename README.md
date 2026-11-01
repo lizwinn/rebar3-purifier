@@ -213,12 +213,14 @@ Three more decisions:
 - **Erlang and rebar3 come from nixpkgs.** The lockfile records the OTP
   release and the rebar3 version of the lock for reference.
 
-## Real-world projects
+## Examples
 
-`tests/real-world.sh` works through real projects pinned to a commit, in CI
-on x86_64-linux and aarch64-linux: it locks each one, builds its escript in
-the Nix sandbox and runs it, compiles it with the offline rebar3, and locks
-again to check that the lockfile is reproduced byte for byte.
+Two real projects show the purifier at work. `tests/real-world.sh` takes
+each one at a pinned commit, and CI on x86_64-linux and aarch64-linux locks
+it, builds its escript in the Nix sandbox and runs it, compiles it with the
+offline rebar3, and locks it again to check that the lockfile is reproduced
+byte for byte. They are examples, and the purifier is not limited to
+projects like them.
 
 - [erlang_ls](https://github.com/erlang-ls/erlang_ls) at `3a79185`: two
   applications, Hex dependencies (one renamed), git dependencies by commit
