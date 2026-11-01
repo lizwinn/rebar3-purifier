@@ -23,13 +23,15 @@
 
 %% The builder of the cache tree in Nix. The manifest lists one entry per
 %% line, its path in the tree and its store path, separated by a tab. A
-%% file entry is linked at its path. A git entry is a plain checkout, and
-%% its path gets the repository rp_git rebuilds from it, with what the
-%% lockfile's gitSources record about it.
+%% file entry, and a git entry without `leaveDotGit`, is linked at its
+%% path. A git entry with `leaveDotGit` is a plain checkout, and its path
+%% gets the repository rp_git rebuilds from it, with the commit object the
+%% entry records and what the lockfile's gitSources record about it.
 build_cache() ->
     Out = os:getenv("out"),
     {ok, Manifest} = file:read_file(os:getenv("manifestPath")),
     {ok, Lock} = rp_util:read_lock(os:getenv("lockFile")),
+    Artifacts = maps:from_list([{P, A} || A = #{<<"path">> := P} <- maps:get(<<"artifacts">>, Lock)]),
     Sources = maps:from_list([{P, S} || S = #{<<"path">> := P} <- maps:get(<<"gitSources">>, Lock, [])]),
     Lines = [L || L <- binary:split(Manifest, <<"\n">>, [global]), L =/= <<>>],
     lists:foreach(
@@ -37,9 +39,11 @@ build_cache() ->
             [Path, Store] = binary:split(Line, <<"\t">>),
             Target = filename:join(Out, Path),
             rp_util:ensure_dir(filename:dirname(Target)),
-            case maps:find(Path, Sources) of
-                {ok, Source} -> rp_git:make_repo(Store, Target, Source);
-                error -> ok = file:make_symlink(Store, Target)
+            case maps:get(Path, Artifacts) of
+                #{<<"git">> := #{<<"leaveDotGit">> := true}} = Artifact ->
+                    rp_git:make_repo(Store, Target, Artifact, maps:get(Path, Sources, #{}));
+                _ ->
+                    ok = file:make_symlink(Store, Target)
             end
         end,
         Lines

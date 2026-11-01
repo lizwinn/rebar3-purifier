@@ -18,13 +18,16 @@
 
 -include_lib("kernel/include/file.hrl").
 
--export([make_repo/3, commit_info/2]).
+-export([make_repo/4, commit_info/2]).
 
 %% Writes a bare repository at Dest from the checkout at Checkout, for the
-%% git source Source of a lockfile.
-make_repo(Checkout, Dest, Source) ->
-    Rev = rev(Source),
-    Commit = base64:decode(maps:get(<<"commitObject">>, Source)),
+%% git entry Artifact of a lockfile, with the commit object it records.
+%% Source is the entry's record in gitSources, with the tags, branches and
+%% submodule entries, or an empty map.
+make_repo(Checkout, Dest, #{<<"git">> := Git}, Source) ->
+    Rev = binary_to_list(maps:get(<<"rev">>, Git)),
+    Url = maps:get(<<"url">>, Git),
+    Commit = base64:decode(maps:get(<<"commitObject">>, Git)),
     Gitlinks = maps:from_list([
         {P, hex_to_raw(R)}
      || #{<<"path">> := P, <<"rev">> := R} <- maps:get(<<"gitlinks">>, Source, [])
@@ -37,12 +40,12 @@ make_repo(Checkout, Dest, Source) ->
             ok;
         _ ->
             rp_util:fail("the checkout of ~ts at ~ts does not reproduce the tree of its commit (got ~ts)",
-                         [maps:get(<<"url">>, Source), Rev, TreeHex])
+                         [Url, Rev, TreeHex])
     end,
     CommitSha = write_object(Dest, "commit", Commit),
     hex(CommitSha) =:= list_to_binary(Rev) orelse
         rp_util:fail("the recorded commit object of ~ts hashes to ~ts, not ~ts",
-                     [maps:get(<<"url">>, Source), hex(CommitSha), Rev]),
+                     [Url, hex(CommitSha), Rev]),
     Branches = [binary_to_list(B) || B <- maps:get(<<"branches">>, Source, [])],
     Tags = [binary_to_list(T) || T <- maps:get(<<"tags">>, Source, [])],
     Head = case Branches of [B | _] -> B; [] -> "rebar3-purifier" end,
@@ -54,9 +57,6 @@ make_repo(Checkout, Dest, Source) ->
                          "[core]\n\trepositoryformatversion = 0\n\tbare = true\n"),
     rp_util:ensure_dir(filename:join(Dest, "refs/tags")),
     ok.
-
-rev(#{<<"path">> := Path}) ->
-    filename:basename(binary_to_list(Path)).
 
 write_ref(Dest, Ref, Rev) ->
     File = filename:join(Dest, Ref),

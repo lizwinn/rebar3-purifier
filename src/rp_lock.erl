@@ -220,8 +220,15 @@ git_entries(Project) ->
      || {_, {git_subdir, Url, {ref, Rev}, _}, _} <- rebar_lock_deps(Project)
     ],
     Repos = lists:usort([git_repo(filename:join(Project, D)) || D <- Dirs] ++ Subdirs),
+    %% The build rebuilds a repository from each plain checkout, with the
+    %% raw commit object the entry records and the submodule entries of
+    %% its tree; see rp_git.
+    Commits = maps:from_list([
+        {R, rp_git:commit_info(https_url(U), R)}
+     || {U, R} <- lists:usort([{U, R} || {U, R, _, _} <- Repos])
+    ]),
     Entries = [
-        git_entry(Url, Rev)
+        git_entry(Url, Rev, element(1, maps:get(Rev, Commits)))
      || {Url, Rev} <- lists:usort([{https_url(U), R} || {U, R, _, _} <- Repos])
     ],
     %% rebar3 clones a branch or a tag with `git clone -b`, so the clone
@@ -232,25 +239,14 @@ git_entries(Project) ->
         fun({_, _, Tags, Branches}) -> {Tags, Branches} end,
         Repos
     ),
-    %% The build rebuilds a repository from each plain checkout, with the
-    %% raw commit object and the submodule entries of its tree; see
-    %% rp_git.
-    Commits = maps:from_list([
-        {R, rp_git:commit_info(https_url(U), R)}
-     || {U, R} <- lists:usort([{U, R} || {U, R, _, _} <- Repos])
-    ]),
     Sources = [
-        begin
-            {CommitObject, Gitlinks} = maps:get(R, Commits),
-            #{
-                url => list_to_binary(U),
-                path => <<"git/", (list_to_binary(R))/binary>>,
-                tags => lists:usort([list_to_binary(T) || {Ts, _} <- Refs, T <- Ts]),
-                branches => lists:usort([list_to_binary(B) || {_, Bs} <- Refs, B <- Bs]),
-                commitObject => CommitObject,
-                gitlinks => Gitlinks
-            }
-        end
+        #{
+            url => list_to_binary(U),
+            path => <<"git/", (list_to_binary(R))/binary>>,
+            tags => lists:usort([list_to_binary(T) || {Ts, _} <- Refs, T <- Ts]),
+            branches => lists:usort([list_to_binary(B) || {_, Bs} <- Refs, B <- Bs]),
+            gitlinks => element(2, maps:get(R, Commits))
+        }
      || {U, R} := Refs <- maps:iterator(Grouped, ordered)
     ],
     {Entries, Sources}.
@@ -277,7 +273,10 @@ git_out(Dir, Args) ->
     {0, Out} = rp_util:run_quiet("git", Args, Dir, []),
     binary_to_list(Out).
 
-git_entry(Url, Rev) ->
+%% A git entry of the shared library's shape. `hash` is of the plain
+%% checkout, and `leaveDotGit` with `commitObject` asks for the .git
+%% directory rebuilt from it.
+git_entry(Url, Rev, CommitObject) ->
     io:format(standard_error, "rebar3-purifier: hashing ~ts at ~ts~n", [Url, Rev]),
     {ok, Cwd} = file:get_cwd(),
     case rp_util:run_quiet("nix-prefetch-git", ["--url", Url, "--rev", Rev, "--quiet"], Cwd, []) of
@@ -289,7 +288,8 @@ git_entry(Url, Rev) ->
                     url => list_to_binary(Url),
                     rev => list_to_binary(Rev),
                     submodules => false,
-                    leaveDotGit => false
+                    leaveDotGit => true,
+                    commitObject => CommitObject
                 },
                 hash => Hash
             };
