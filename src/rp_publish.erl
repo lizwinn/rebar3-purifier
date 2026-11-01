@@ -20,19 +20,35 @@ publish(Args) ->
     LockFile = rp_util:lock_file(Root),
     Lock =
         case rp_util:read_lock(LockFile) of
-            {ok, L} -> L;
-            {error, _} -> rp_util:fail("~ts is missing or from another version; run `rebar3-purifier lock`", [LockFile])
+            {ok, L} ->
+                L;
+            {error, _} ->
+                rp_util:fail("~ts is missing or from another version; run `rebar3-purifier lock`", [
+                    LockFile
+                ])
         end,
-    maps:get(<<"definitionHash">>, Lock) =:= rp_util:definition_hash(Root, rp_util:definition_files(Root)) orelse
-        rp_util:fail("~ts is out of date; run `rebar3-purifier lock` and commit it first", [LockFile]),
-    Packages = [maps:get(<<"name">>, P) || P <- maps:get(<<"hexPackages">>, maps:get(<<"outputs">>, Lock))],
+    maps:get(<<"definitionHash">>, Lock) =:=
+        rp_util:definition_hash(Root, rp_util:definition_files(Root)) orelse
+        rp_util:fail("~ts is out of date; run `rebar3-purifier lock` and commit it first", [
+            LockFile
+        ]),
+    Packages = [
+        maps:get(<<"name">>, P)
+     || P <- maps:get(<<"hexPackages">>, maps:get(<<"outputs">>, Lock))
+    ],
     Packages =/= [] orelse
-        rp_util:fail("the lockfile lists no Hex packages; add rebar3_hex to project_plugins and relock", []),
-    Names = case Selected of
-        [] -> Packages;
-        _ -> [list_to_binary(S) || S <- Selected]
-    end,
-    [lists:member(N, Packages) orelse rp_util:fail("~ts is not a Hex package of this build", [N]) || N <- Names],
+        rp_util:fail(
+            "the lockfile lists no Hex packages; add rebar3_hex to project_plugins and relock", []
+        ),
+    Names =
+        case Selected of
+            [] -> Packages;
+            _ -> [list_to_binary(S) || S <- Selected]
+        end,
+    [
+        lists:member(N, Packages) orelse rp_util:fail("~ts is not a Hex package of this build", [N])
+     || N <- Names
+    ],
     Tarballs = [build(Root, N) || N <- Names],
     case DryRun of
         true -> [io:format("~ts~n", [T]) || T <- Tarballs];
@@ -46,11 +62,19 @@ build(Root, Name) ->
     Link = filename:join([Root, "_build", "rebar3-purifier", "publish", binary_to_list(Name)]),
     rp_util:ensure_dir(filename:dirname(Link)),
     Expr = iolist_to_binary([
-        "let pkgs = import ", nix_string(env("REBAR3_PURIFIER_NIXPKGS")), " { }; ",
-        "build = pkgs.callPackage ", nix_string(filename:join(env("REBAR3_PURIFIER_NIX_LIB"), "build-rebar3-project.nix")),
-        " { rebar3-purifier.cli = builtins.storePath ", nix_string(cli_package()), "; }; ",
-        "in (build { src = builtins.path { path = ", nix_string(Root), "; name = \"source\"; ",
-        "filter = p: t: baseNameOf p != \"_build\" && baseNameOf p != \".git\"; }; }).hexPackages.", nix_attr(Name)
+        "let pkgs = import ",
+        nix_string(env("REBAR3_PURIFIER_NIXPKGS")),
+        " { }; ",
+        "build = pkgs.callPackage ",
+        nix_string(filename:join(env("REBAR3_PURIFIER_NIX_LIB"), "build-rebar3-project.nix")),
+        " { rebar3-purifier.cli = builtins.storePath ",
+        nix_string(cli_package()),
+        "; }; ",
+        "in (build { src = builtins.path { path = ",
+        nix_string(Root),
+        "; name = \"source\"; ",
+        "filter = p: t: baseNameOf p != \"_build\" && baseNameOf p != \".git\"; }; }).hexPackages.",
+        nix_attr(Name)
     ]),
     case rp_util:run("nix-build", ["-E", binary_to_list(Expr), "--out-link", Link], Root, []) of
         {0, _} ->
@@ -73,7 +97,12 @@ env(Name) ->
 
 nix_string(S) ->
     Escaped = lists:flatmap(
-        fun($") -> "\\\""; ($\\) -> "\\\\"; ($$) -> "\\$"; (C) -> [C] end,
+        fun
+            ($") -> "\\\"";
+            ($\\) -> "\\\\";
+            ($$) -> "\\$";
+            (C) -> [C]
+        end,
         unicode:characters_to_list(S)
     ),
     [$", Escaped, $"].
@@ -81,29 +110,34 @@ nix_string(S) ->
 nix_attr(Name) -> nix_string(Name).
 
 upload(Tarball) ->
-    Key = case os:getenv("HEX_API_KEY") of
-        false -> rp_util:fail("HEX_API_KEY is not set", []);
-        K -> list_to_binary(K)
-    end,
+    Key =
+        case os:getenv("HEX_API_KEY") of
+            false -> rp_util:fail("HEX_API_KEY is not set", []);
+            K -> list_to_binary(K)
+        end,
     {ok, _} = application:ensure_all_started([inets, ssl]),
     Base = r3_hex_core:default_config(),
     Config = Base#{
         api_key => Key,
-        api_url => case os:getenv("HEX_API_URL") of
-            false -> maps:get(api_url, Base);
-            Url -> list_to_binary(Url)
-        end,
-        api_organization => case os:getenv("HEX_ORGANIZATION") of
-            false -> undefined;
-            Org -> list_to_binary(Org)
-        end
+        api_url =>
+            case os:getenv("HEX_API_URL") of
+                false -> maps:get(api_url, Base);
+                Url -> list_to_binary(Url)
+            end,
+        api_organization =>
+            case os:getenv("HEX_ORGANIZATION") of
+                false -> undefined;
+                Org -> list_to_binary(Org)
+            end
     },
     {ok, Bin} = file:read_file(Tarball),
     case r3_hex_api_release:publish(Config, Bin) of
         {ok, {Status, _, _}} when Status >= 200, Status < 300 ->
             io:format("published ~ts~n", [filename:basename(Tarball)]);
         {ok, {Status, _, Body}} ->
-            rp_util:fail("Hex refused ~ts with HTTP ~b: ~p", [filename:basename(Tarball), Status, Body]);
+            rp_util:fail("Hex refused ~ts with HTTP ~b: ~p", [
+                filename:basename(Tarball), Status, Body
+            ]);
         {error, Reason} ->
             rp_util:fail("publishing ~ts failed: ~p", [filename:basename(Tarball), Reason])
     end.

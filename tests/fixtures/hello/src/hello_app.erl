@@ -14,7 +14,12 @@ start(_Type, _Args) ->
             io:format("~s~n", [hello:greeting(<<"release">>)]),
             spawn(fun() -> init:stop() end)
     end,
-    {ok, spawn(fun() -> receive stop -> ok end end)}.
+    {ok,
+        spawn(fun() ->
+            receive
+                stop -> ok
+            end
+        end)}.
 
 stop(_State) ->
     ok.

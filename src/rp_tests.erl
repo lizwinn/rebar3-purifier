@@ -9,7 +9,9 @@
 https_url_test_() ->
     [
         ?_assertEqual("https://github.com/o/r.git", rp_lock:https_url("git@github.com:o/r.git")),
-        ?_assertEqual("https://github.com/o/r.git", rp_lock:https_url("ssh://git@github.com/o/r.git")),
+        ?_assertEqual(
+            "https://github.com/o/r.git", rp_lock:https_url("ssh://git@github.com/o/r.git")
+        ),
         ?_assertEqual("https://example.com/o/r", rp_lock:https_url("ssh://example.com:2222/o/r")),
         ?_assertEqual("https://github.com/o/r", rp_lock:https_url("git://github.com/o/r")),
         ?_assertEqual("https://github.com/o/r", rp_lock:https_url("https://github.com/o/r"))
@@ -23,28 +25,40 @@ quote_test_() ->
 
 repo_url_test_() ->
     {setup,
-     fun() ->
-         Saved = [{V, os:getenv(V)} || V <- ["HEX_CDN", "HEX_MIRROR"]],
-         os:unsetenv("HEX_CDN"),
-         os:unsetenv("HEX_MIRROR"),
-         Saved
-     end,
-     fun(Saved) ->
-         [case Value of false -> os:unsetenv(V); _ -> os:putenv(V, Value) end || {V, Value} <- Saved]
-     end,
-     fun(_) ->
-         Config = [{hex, [{repos, [#{name => <<"internal">>, repo_url => <<"https://hex.example.com/">>}]}]}],
-         [
-             ?_assertEqual(<<"https://repo.hex.pm">>, rp_lock:repo_url("hexpm", [])),
-             ?_assertEqual(<<"https://repo.hex.pm/repos/acme">>, rp_lock:repo_url("hexpm:acme", [])),
-             ?_assertEqual(<<"https://hex.example.com">>, rp_lock:repo_url("internal", Config)),
-             ?_test(begin
-                 os:putenv("HEX_CDN", "https://mirror.example.com/"),
-                 ?assertEqual(<<"https://mirror.example.com">>, rp_lock:repo_url("hexpm", [])),
-                 os:unsetenv("HEX_CDN")
-             end)
-         ]
-     end}.
+        fun() ->
+            Saved = [{V, os:getenv(V)} || V <- ["HEX_CDN", "HEX_MIRROR"]],
+            os:unsetenv("HEX_CDN"),
+            os:unsetenv("HEX_MIRROR"),
+            Saved
+        end,
+        fun(Saved) ->
+            [
+                case Value of
+                    false -> os:unsetenv(V);
+                    _ -> os:putenv(V, Value)
+                end
+             || {V, Value} <- Saved
+            ]
+        end,
+        fun(_) ->
+            Config = [
+                {hex, [
+                    {repos, [#{name => <<"internal">>, repo_url => <<"https://hex.example.com/">>}]}
+                ]}
+            ],
+            [
+                ?_assertEqual(<<"https://repo.hex.pm">>, rp_lock:repo_url("hexpm", [])),
+                ?_assertEqual(
+                    <<"https://repo.hex.pm/repos/acme">>, rp_lock:repo_url("hexpm:acme", [])
+                ),
+                ?_assertEqual(<<"https://hex.example.com">>, rp_lock:repo_url("internal", Config)),
+                ?_test(begin
+                    os:putenv("HEX_CDN", "https://mirror.example.com/"),
+                    ?assertEqual(<<"https://mirror.example.com">>, rp_lock:repo_url("hexpm", [])),
+                    os:unsetenv("HEX_CDN")
+                end)
+            ]
+        end}.
 
 %% The lockfile's JSON has sorted keys and fixed indentation, so a relock
 %% that finds the same downloads writes the same bytes.
@@ -74,12 +88,14 @@ hex_entries_test() ->
     ok = file:write_file(filename:join(Packages, "jsx-3.1.0.etag"), <<"\"x\"">>),
     os:unsetenv("HEX_CDN"),
     ?assertEqual(
-        [#{
-            path => <<"hex/hexpm/packages/jsx-3.1.0.tar">>,
-            url => <<"https://repo.hex.pm/tarballs/jsx-3.1.0.tar">>,
-            mirrors => [],
-            hash => rp_util:sri_sha256(<<"tarball">>)
-        }],
+        [
+            #{
+                path => <<"hex/hexpm/packages/jsx-3.1.0.tar">>,
+                url => <<"https://repo.hex.pm/tarballs/jsx-3.1.0.tar">>,
+                mirrors => [],
+                hash => rp_util:sri_sha256(<<"tarball">>)
+            }
+        ],
         rp_lock:hex_entries(Cache, [])
     ),
     rp_util:rm_rf(Cache).
@@ -113,9 +129,12 @@ git_roundtrip_test() ->
     ok = file:write_file(filename:join(Src, "sub/dir/c.txt"), <<"c\n">>),
     ok = file:make_symlink("a.txt", filename:join(Src, "link")),
     Env = [
-        {"GIT_AUTHOR_NAME", "t"}, {"GIT_AUTHOR_EMAIL", "t@example.com"},
-        {"GIT_COMMITTER_NAME", "t"}, {"GIT_COMMITTER_EMAIL", "t@example.com"},
-        {"GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z"}, {"GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z"},
+        {"GIT_AUTHOR_NAME", "t"},
+        {"GIT_AUTHOR_EMAIL", "t@example.com"},
+        {"GIT_COMMITTER_NAME", "t"},
+        {"GIT_COMMITTER_EMAIL", "t@example.com"},
+        {"GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z"},
+        {"GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z"},
         {"HOME", Tmp}
     ],
     Git = fun(Dir, Args) ->
@@ -130,11 +149,13 @@ git_roundtrip_test() ->
     Checkout = filename:join(Tmp, "checkout"),
     {0, _} = rp_util:run_quiet("cp", ["-a", Src, Checkout], Tmp, []),
     rp_util:rm_rf(filename:join(Checkout, ".git")),
-    Artifact = #{<<"git">> => #{
-        <<"url">> => <<"https://example.com/t.git">>,
-        <<"rev">> => list_to_binary(Rev),
-        <<"commitObject">> => #{<<"object">> => Object, <<"gitlinks">> => []}
-    }},
+    Artifact = #{
+        <<"git">> => #{
+            <<"url">> => <<"https://example.com/t.git">>,
+            <<"rev">> => list_to_binary(Rev),
+            <<"commitObject">> => #{<<"object">> => Object, <<"gitlinks">> => []}
+        }
+    },
     Repo = filename:join(Tmp, "repo"),
     ok = rp_git:make_repo(Checkout, Repo, Artifact, #{<<"tags">> => [<<"v1">>]}),
     Git(Tmp, ["clone", "-q", "-b", "v1", "--single-branch", Repo, filename:join(Tmp, "clone")]),
@@ -143,5 +164,39 @@ git_roundtrip_test() ->
     ?assertThrow({fail, _}, rp_git:make_repo(Checkout, filename:join(Tmp, "repo2"), Artifact, #{})),
     rp_util:rm_rf(Tmp).
 
+%% An application whose version comes from git gets the version the lock
+%% run recorded; one with a version of its own keeps it.
+pin_versions_test() ->
+    Dir = tmp_dir("versions"),
+    rp_util:ensure_dir(filename:join(Dir, "apps/a/src")),
+    rp_util:ensure_dir(filename:join(Dir, "apps/b/src")),
+    ok = file:write_file(
+        filename:join(Dir, "apps/a/src/a.app.src"),
+        <<"{application, a, [{vsn, git}, {applications, [kernel]}]}.\n">>
+    ),
+    ok = file:write_file(
+        filename:join(Dir, "apps/b/src/b.app.src"),
+        <<"{application, b, [{vsn, \"2.0.0\"}]}.\n">>
+    ),
+    LockFile = filename:join(Dir, "lock.json"),
+    rp_util:write_json(LockFile, #{
+        version => rp_util:lock_version(),
+        outputs => #{
+            apps => [
+                #{name => <<"a">>, version => <<"1.2.3">>, dir => <<"apps/a">>},
+                #{name => <<"b">>, version => <<"9.9.9">>, dir => <<"apps/b">>}
+            ]
+        }
+    }),
+    rp_versions:pin(Dir, LockFile),
+    {ok, [{application, a, A}]} = file:consult(filename:join(Dir, "apps/a/src/a.app.src")),
+    {ok, [{application, b, B}]} = file:consult(filename:join(Dir, "apps/b/src/b.app.src")),
+    ?assertEqual("1.2.3", proplists:get_value(vsn, A)),
+    ?assertEqual([kernel], proplists:get_value(applications, A)),
+    ?assertEqual("2.0.0", proplists:get_value(vsn, B)),
+    rp_util:rm_rf(Dir).
+
 sri_test() ->
-    ?assertEqual(<<"sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=">>, rp_util:sri_sha256(<<>>)).
+    ?assertEqual(
+        <<"sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=">>, rp_util:sri_sha256(<<>>)
+    ).

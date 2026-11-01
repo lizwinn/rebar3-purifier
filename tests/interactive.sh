@@ -39,6 +39,14 @@ offline "$toolchain/bin/rebar3" eunit
 offline "$toolchain/bin/rebar3" escriptize
 test "$(_build/default/bin/hello Nix)" = '{"hello":"Nix"}'
 
+# The Erlang Language Platform, when it is on the PATH, loads the project
+# through the same offline rebar3.
+if command -v elp > /dev/null; then
+  offline elp parse-all --project . --to "$work/elp"
+  test -f "$work/elp/hello.etf"
+  echo "elp: ok"
+fi
+
 # A changed build definition: the wrapper warns and prints no environment,
 # so rebar3 resolves the usual way.
 echo '%% changed' >> rebar.config

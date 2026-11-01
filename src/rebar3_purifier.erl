@@ -20,6 +20,9 @@ usage() ->
     "  build-cache             the builder of the cache tree (in Nix)\n"
     "  check DIR LOCKFILE      check that the lockfile fits the build in DIR\n"
     "                          (in Nix, before rebar3 runs)\n"
+    "  pin-versions DIR LOCKFILE\n"
+    "                          write the versions the lock run recorded into\n"
+    "                          applications whose version comes from git (in Nix)\n"
     "  index DIR               write the package index and etags of the Hex\n"
     "                          tarballs under DIR/hex\n".
 
@@ -35,14 +38,25 @@ main(Args) ->
         end,
     erlang:halt(Code).
 
-run(["lock" | Rest]) -> rp_lock:lock(Rest, false);
-run(["relock" | Rest]) -> rp_lock:lock(Rest, true);
-run(["env"]) -> rp_wrapper:env();
-run(["publish" | Rest]) -> rp_publish:publish(Rest);
-run(["build-cache"]) -> rp_index:build_cache();
-run(["index", Dir]) -> rp_index:index(Dir);
-run(["check", Dir, LockFile]) -> rp_check:check(Dir, LockFile);
-run(["help"]) -> io:put_chars(usage()), ok;
+run(["lock" | Rest]) ->
+    rp_lock:lock(Rest, false);
+run(["relock" | Rest]) ->
+    rp_lock:lock(Rest, true);
+run(["env"]) ->
+    rp_wrapper:env();
+run(["publish" | Rest]) ->
+    rp_publish:publish(Rest);
+run(["build-cache"]) ->
+    rp_index:build_cache();
+run(["index", Dir]) ->
+    rp_index:index(Dir);
+run(["check", Dir, LockFile]) ->
+    rp_check:check(Dir, LockFile);
+run(["pin-versions", Dir, LockFile]) ->
+    rp_versions:pin(Dir, LockFile);
+run(["help"]) ->
+    io:put_chars(usage()),
+    ok;
 run(_) ->
     io:put_chars(standard_error, usage()),
     {exit, 2}.

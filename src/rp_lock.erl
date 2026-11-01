@@ -58,11 +58,19 @@ write_lock(Root, LockFile, Profiles) ->
     ],
     lists:foreach(
         fun(P) ->
-            Args = case P of "default" -> ["compile"]; _ -> ["as", P, "compile"] end,
+            Args =
+                case P of
+                    "default" -> ["compile"];
+                    _ -> ["as", P, "compile"]
+                end,
             io:format(standard_error, "rebar3-purifier: rebar3 ~ts~n", [lists:join(" ", Args)]),
             case rp_util:run("rebar3", Args, Project, Env) of
-                {0, _} -> ok;
-                {Status, _} -> rp_util:fail("rebar3 ~ts failed with exit status ~b", [lists:join(" ", Args), Status])
+                {0, _} ->
+                    ok;
+                {Status, _} ->
+                    rp_util:fail("rebar3 ~ts failed with exit status ~b", [
+                        lists:join(" ", Args), Status
+                    ])
             end
         end,
         Profiles
@@ -109,7 +117,11 @@ update_rebar_lock(Root, Project) ->
             ok;
         {{ok, Bin}, _} ->
             ok = file:write_file(Old, Bin),
-            io:format(standard_error, "rebar3-purifier: updated rebar.lock; commit it with the lockfile~n", []);
+            io:format(
+                standard_error,
+                "rebar3-purifier: updated rebar.lock; commit it with the lockfile~n",
+                []
+            );
         {{error, enoent}, _} ->
             ok
     end.
@@ -144,10 +156,18 @@ hex_entries(Cache, Config) ->
         [
             #{
                 path => list_to_binary(filename:join(["hex", Repo, "packages", File])),
-                url => <<(repo_url(Repo, Config))/binary, "/tarballs/", (list_to_binary(File))/binary>>,
+                url => <<
+                    (repo_url(Repo, Config))/binary, "/tarballs/", (list_to_binary(File))/binary
+                >>,
                 mirrors => [],
-                hash => rp_util:sri_sha256(element(2, {ok, _} = file:read_file(
-                    filename:join([HexDir, Repo, "packages", File]))))
+                hash => rp_util:sri_sha256(
+                    element(
+                        2,
+                        {ok, _} = file:read_file(
+                            filename:join([HexDir, Repo, "packages", File])
+                        )
+                    )
+                )
             }
          || File <- lists:sort(filelib:wildcard("*.tar", filename:join([HexDir, Repo, "packages"])))
         ]
@@ -166,13 +186,17 @@ repo_url("hexpm", _) ->
                 "" -> <<"https://repo.hex.pm">>;
                 M -> trim_slash(M)
             end;
-        "" -> <<"https://repo.hex.pm">>;
-        Cdn -> trim_slash(Cdn)
+        "" ->
+            <<"https://repo.hex.pm">>;
+        Cdn ->
+            trim_slash(Cdn)
     end;
 repo_url("hexpm:" ++ Org, Config) ->
     <<(repo_url("hexpm", Config))/binary, "/repos/", (list_to_binary(Org))/binary>>;
 repo_url(Repo, Config) ->
-    Global = rp_util:consult(filename:join([global_config_dir(), ".config", "rebar3", "rebar.config"])),
+    Global = rp_util:consult(
+        filename:join([global_config_dir(), ".config", "rebar3", "rebar.config"])
+    ),
     Name = list_to_binary(Repo),
     Repos = [R || C <- [Config, Global], R <- hex_repos(C), maps:get(name, R, undefined) =:= Name],
     case Repos of
@@ -303,10 +327,11 @@ https_url("git@" ++ Rest) ->
         _ -> "git@" ++ Rest
     end;
 https_url("ssh://" ++ Rest) ->
-    HostPath = case string:split(Rest, "@") of
-        [_User, HP] -> HP;
-        [HP] -> HP
-    end,
+    HostPath =
+        case string:split(Rest, "@") of
+            [_User, HP] -> HP;
+            [HP] -> HP
+        end,
     [Host | Path] = string:split(HostPath, "/"),
     HostNoPort = hd(string:split(Host, ":")),
     "https://" ++ HostNoPort ++ "/" ++ lists:flatten(Path);
@@ -319,26 +344,31 @@ https_url(Url) ->
 
 outputs(Root, Project, Config) ->
     Apps = [app(Root, Project, Dir) || Dir <- rp_util:app_dirs(Root)],
-    Plugins = [plugin_name(P) || Key <- [plugins, project_plugins],
-                                 P <- proplists:get_value(Key, Config, [])],
+    Plugins = [
+        plugin_name(P)
+     || Key <- [plugins, project_plugins],
+        P <- proplists:get_value(Key, Config, [])
+    ],
     #{
         apps => Apps,
         releases => releases(Config),
         escripts => escripts(Config),
-        hexPackages => case lists:member(rebar3_hex, Plugins) of
-            true -> [maps:with([name, version], A) || A <- Apps];
-            false -> []
-        end
+        hexPackages =>
+            case lists:member(rebar3_hex, Plugins) of
+                true -> [maps:with([name, version], A) || A <- Apps];
+                false -> []
+            end
     }.
 
 app(Root, Project, Dir) ->
     [Src] = filelib:wildcard("src/*.app.src", filename:join(Root, Dir)),
     Name = filename:basename(Src, ".app.src"),
     AppFile = filename:join([Project, "_build", "default", "lib", Name, "ebin", Name ++ ".app"]),
-    Version = case file:consult(AppFile) of
-        {ok, [{application, _, Props}]} -> rp_util:to_bin(proplists:get_value(vsn, Props, ""));
-        _ -> rp_util:fail("rebar3 compile wrote no ~ts", [AppFile])
-    end,
+    Version =
+        case file:consult(AppFile) of
+            {ok, [{application, _, Props}]} -> rp_util:to_bin(proplists:get_value(vsn, Props, ""));
+            _ -> rp_util:fail("rebar3 compile wrote no ~ts", [AppFile])
+        end,
     #{name => list_to_binary(Name), version => Version, dir => list_to_binary(Dir)}.
 
 plugin_name(P) when is_atom(P) -> P;
@@ -347,15 +377,21 @@ plugin_name(P) when is_tuple(P) -> element(1, P).
 %% The names of the relx releases of the default and prod profiles.
 releases(Config) ->
     Profiles = proplists:get_value(profiles, Config, []),
-    Relx = proplists:get_value(relx, Config, []) ++
-        proplists:get_value(relx, proplists:get_value(prod, Profiles, []), []),
-    lists:usort([rp_util:to_bin(Name) || R <- Relx,
-                                        element(1, R) =:= release,
-                                        {Name, _} <- [element(2, R)]]).
+    Relx =
+        proplists:get_value(relx, Config, []) ++
+            proplists:get_value(relx, proplists:get_value(prod, Profiles, []), []),
+    lists:usort([
+        rp_util:to_bin(Name)
+     || R <- Relx,
+        element(1, R) =:= release,
+        {Name, _} <- [element(2, R)]
+    ]).
 
 %% The escript, when rebar.config names it or its main application.
 escripts(Config) ->
-    case {proplists:get_value(escript_name, Config), proplists:get_value(escript_main_app, Config)} of
+    case
+        {proplists:get_value(escript_name, Config), proplists:get_value(escript_main_app, Config)}
+    of
         {undefined, undefined} -> [];
         {undefined, Main} -> [rp_util:to_bin(Main)];
         {Name, _} -> [rp_util:to_bin(Name)]

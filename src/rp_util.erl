@@ -101,11 +101,16 @@ read_lock(File) ->
                 #{<<"version">> := _} ->
                     {error, version};
                 _ ->
-                    fail("~ts is not a rebar3-purifier lockfile; run `rebar3-purifier relock`", [File])
+                    fail("~ts is not a rebar3-purifier lockfile; run `rebar3-purifier relock`", [
+                        File
+                    ])
             catch
                 error:_ ->
-                    fail("~ts is not valid JSON; restore it from version control or run "
-                         "`rebar3-purifier relock`", [File])
+                    fail(
+                        "~ts is not valid JSON; restore it from version control or run "
+                        "`rebar3-purifier relock`",
+                        [File]
+                    )
             end;
         {error, enoent} ->
             {error, enoent}
@@ -127,7 +132,8 @@ encode(Map, Indent) when is_map(Map) ->
      || K <- Keys
     ],
     ["{\n", lists:join(",\n", Items), "\n", pad(Indent), "}"];
-encode([], _) -> "[]";
+encode([], _) ->
+    "[]";
 encode(List, Indent) when is_list(List) ->
     Pad = pad(Indent + 1),
     Items = [[Pad, encode(V, Indent + 1)] || V <- List],
@@ -146,8 +152,11 @@ to_bin(I) when is_integer(I) -> integer_to_binary(I).
 %% script, rebar.lock, and the rebar.config of every application, as paths
 %% relative to Root, sorted.
 definition_files(Root) ->
-    Top = [F || F <- ["rebar.config", "rebar.config.script", "rebar.lock"],
-                filelib:is_regular(filename:join(Root, F))],
+    Top = [
+        F
+     || F <- ["rebar.config", "rebar.config.script", "rebar.lock"],
+        filelib:is_regular(filename:join(Root, F))
+    ],
     Apps = [
         F
      || Dir <- app_dirs(Root),
@@ -176,11 +185,13 @@ consult(File) ->
 %% "." for an application at the root, and each directory under apps/ or
 %% lib/ that holds a src/*.app.src, as rebar3's default lib_dirs find them.
 app_dirs(Root) ->
-    Root1 = [ "." || filelib:wildcard("src/*.app.src", Root) =/= [] ],
+    Root1 = ["." || filelib:wildcard("src/*.app.src", Root) =/= []],
     Nested = lists:usort(
-        [filename:dirname(filename:dirname(F))
+        [
+            filename:dirname(filename:dirname(F))
          || Pattern <- ["apps/*/src/*.app.src", "lib/*/src/*.app.src"],
-            F <- filelib:wildcard(Pattern, Root)]
+            F <- filelib:wildcard(Pattern, Root)
+        ]
     ),
     Root1 ++ Nested.
 

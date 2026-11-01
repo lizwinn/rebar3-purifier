@@ -32,7 +32,10 @@ build_cache() ->
     {ok, Manifest} = file:read_file(os:getenv("manifestPath")),
     {ok, Lock} = rp_util:read_lock(os:getenv("lockFile")),
     Artifacts = maps:from_list([{P, A} || A = #{<<"path">> := P} <- maps:get(<<"artifacts">>, Lock)]),
-    Sources = maps:from_list([{P, S} || S = #{<<"path">> := P} <- maps:get(<<"gitSources">>, Lock, [])]),
+    Sources = maps:from_list([
+        {P, S}
+     || S = #{<<"path">> := P} <- maps:get(<<"gitSources">>, Lock, [])
+    ]),
     Lines = [L || L <- binary:split(Manifest, <<"\n">>, [global]), L =/= <<>>],
     lists:foreach(
         fun(Line) ->
@@ -78,7 +81,10 @@ index_tarball(Packages, Repo, File) ->
             %% by its application.
             Requirements = maps:get(<<"requirements">>, Metadata, #{}),
             Dependencies = [
-                {maps:get(<<"app">>, R, Dep), {pkg, Dep, maps:get(<<"requirement">>, R), undefined, undefined}}
+                {
+                    maps:get(<<"app">>, R, Dep),
+                    {pkg, Dep, maps:get(<<"requirement">>, R), undefined, undefined}
+                }
              || Dep := R <- Requirements,
                 not maps:get(<<"optional">>, R, false)
             ],

@@ -23,14 +23,20 @@ env() ->
 env(_, _, {error, enoent}) ->
     ok;
 env(_, LockFile, {error, version}) ->
-    warn("~ts was written by another rebar3-purifier version; run `rebar3-purifier relock`. "
-         "Resolving the usual way.", [LockFile]);
+    warn(
+        "~ts was written by another rebar3-purifier version; run `rebar3-purifier relock`. "
+        "Resolving the usual way.",
+        [LockFile]
+    );
 env(Root, LockFile, {ok, Lock}) ->
     Files = rp_util:definition_files(Root),
     case maps:get(<<"definitionHash">>, Lock) =:= rp_util:definition_hash(Root, Files) of
         false ->
-            warn("the build definition changed since ~ts was written; resolving the usual way "
-                 "until `rebar3-purifier lock` renews it.", [LockFile]);
+            warn(
+                "the build definition changed since ~ts was written; resolving the usual way "
+                "until `rebar3-purifier lock` renews it.",
+                [LockFile]
+            );
         true ->
             Tree = realize(Root, LockFile),
             Cache = filename:join([Root, "_build", "rebar3-purifier", "cache"]),
@@ -49,23 +55,34 @@ realize(Root, LockFile) ->
     rp_util:ensure_dir(filename:dirname(Link)),
     Args = [
         filename:join(env_var("REBAR3_PURIFIER_NIX_LIB"), "realize.nix"),
-        "--arg", "lockFile", LockFile,
-        "--argstr", "cli", env_var("REBAR3_PURIFIER_CLI"),
-        "--arg", "nixpkgs", env_var("REBAR3_PURIFIER_NIXPKGS"),
-        "--out-link", Link
+        "--arg",
+        "lockFile",
+        LockFile,
+        "--argstr",
+        "cli",
+        env_var("REBAR3_PURIFIER_CLI"),
+        "--arg",
+        "nixpkgs",
+        env_var("REBAR3_PURIFIER_NIXPKGS"),
+        "--out-link",
+        Link
     ],
     case rp_util:run_quiet("nix-build", Args, Root, []) of
         {0, _} ->
             {ok, Tree} = file:read_link_all(Link),
             Tree;
         {Status, Out} ->
-            rp_util:fail("building the locked downloads failed with exit status ~b:~n~ts", [Status, Out])
+            rp_util:fail("building the locked downloads failed with exit status ~b:~n~ts", [
+                Status, Out
+            ])
     end.
 
 env_var(Name) ->
     case os:getenv(Name) of
-        false -> rp_util:fail("~ts is not set; run rebar3 through the rebar3-purifier toolchain", [Name]);
-        Value -> Value
+        false ->
+            rp_util:fail("~ts is not set; run rebar3 through the rebar3-purifier toolchain", [Name]);
+        Value ->
+            Value
     end.
 
 %% rebar3 writes into its cache, so the cache is a writable tree with the
@@ -102,25 +119,33 @@ mirror(Tree, Cache) ->
     end.
 
 print(Tree, Cache, GitSources) ->
-    Count = case os:getenv("GIT_CONFIG_COUNT") of
-        false -> 0;
-        N -> list_to_integer(N)
-    end,
+    Count =
+        case os:getenv("GIT_CONFIG_COUNT") of
+            false -> 0;
+            N -> list_to_integer(N)
+        end,
     GitConfig =
         [{"safe.directory", "*"}] ++
             [
-                {"url." ++ filename:join(Tree, binary_to_list(P)) ++ ".insteadOf", binary_to_list(U)}
+                {
+                    "url." ++ filename:join(Tree, binary_to_list(P)) ++ ".insteadOf",
+                    binary_to_list(U)
+                }
              || #{<<"url">> := U, <<"path">> := P} <- GitSources
             ],
     Lines =
-        [export("REBAR_CACHE_DIR", Cache),
-         %% Port 9 (discard) refuses connections, so Hex's default
-         %% repository fails at once and rebar3 takes the cached tarball.
-         export("HEX_CDN", "http://127.0.0.1:9"),
-         export("GIT_CONFIG_COUNT", integer_to_list(Count + length(GitConfig)))] ++
+        [
+            export("REBAR_CACHE_DIR", Cache),
+            %% Port 9 (discard) refuses connections, so Hex's default
+            %% repository fails at once and rebar3 takes the cached tarball.
+            export("HEX_CDN", "http://127.0.0.1:9"),
+            export("GIT_CONFIG_COUNT", integer_to_list(Count + length(GitConfig)))
+        ] ++
             lists:append([
-                [export("GIT_CONFIG_KEY_" ++ integer_to_list(Count + I - 1), K),
-                 export("GIT_CONFIG_VALUE_" ++ integer_to_list(Count + I - 1), V)]
+                [
+                    export("GIT_CONFIG_KEY_" ++ integer_to_list(Count + I - 1), K),
+                    export("GIT_CONFIG_VALUE_" ++ integer_to_list(Count + I - 1), V)
+                ]
              || {I, {K, V}} <- lists:enumerate(GitConfig)
             ]),
     io:put_chars(Lines),

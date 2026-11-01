@@ -40,22 +40,32 @@ make_repo(Checkout, Dest, #{<<"git">> := Git}, Source) ->
         <<"tree ", TreeLine:40/binary, "\n", _/binary>> when TreeLine =:= TreeHex ->
             ok;
         _ ->
-            rp_util:fail("the checkout of ~ts at ~ts does not reproduce the tree of its commit (got ~ts)",
-                         [Url, Rev, TreeHex])
+            rp_util:fail(
+                "the checkout of ~ts at ~ts does not reproduce the tree of its commit (got ~ts)",
+                [Url, Rev, TreeHex]
+            )
     end,
     CommitSha = write_object(Dest, "commit", Commit),
     hex(CommitSha) =:= list_to_binary(Rev) orelse
-        rp_util:fail("the recorded commit object of ~ts hashes to ~ts, not ~ts",
-                     [Url, hex(CommitSha), Rev]),
+        rp_util:fail(
+            "the recorded commit object of ~ts hashes to ~ts, not ~ts",
+            [Url, hex(CommitSha), Rev]
+        ),
     Branches = [binary_to_list(B) || B <- maps:get(<<"branches">>, Source, [])],
     Tags = [binary_to_list(T) || T <- maps:get(<<"tags">>, Source, [])],
-    Head = case Branches of [B | _] -> B; [] -> "rebar3-purifier" end,
+    Head =
+        case Branches of
+            [B | _] -> B;
+            [] -> "rebar3-purifier"
+        end,
     [write_ref(Dest, "refs/heads/" ++ B, Rev) || B <- lists:usort([Head | Branches])],
     [write_ref(Dest, "refs/tags/" ++ T, Rev) || T <- Tags],
     ok = file:write_file(filename:join(Dest, "HEAD"), ["ref: refs/heads/", Head, "\n"]),
     ok = file:write_file(filename:join(Dest, "shallow"), [Rev, "\n"]),
-    ok = file:write_file(filename:join(Dest, "config"),
-                         "[core]\n\trepositoryformatversion = 0\n\tbare = true\n"),
+    ok = file:write_file(
+        filename:join(Dest, "config"),
+        "[core]\n\trepositoryformatversion = 0\n\tbare = true\n"
+    ),
     rp_util:ensure_dir(filename:join(Dest, "refs/tags")),
     ok.
 
@@ -96,7 +106,11 @@ entry(Root, Rel, Name, Gitlinks, Dest) ->
                 regular ->
                     {ok, Data} = file:read_file(Path),
                     Sha = write_object(Dest, "blob", Data),
-                    FileMode = case Mode band 8#111 of 0 -> "100644"; _ -> "100755" end,
+                    FileMode =
+                        case Mode band 8#111 of
+                            0 -> "100644";
+                            _ -> "100755"
+                        end,
                     {true, {FileMode, Name, {Name, Sha}}};
                 directory ->
                     case has_files(Path) of
@@ -142,15 +156,23 @@ join(R, N) -> <<R/binary, "/", N/binary>>.
 %% base64-encoded, and the submodule entries of its tree. It fetches the
 %% one commit into a scratch repository under Work.
 commit_info(Url, Rev) ->
-    Work = filename:join(os:getenv("TMPDIR", "/tmp"),
-                         "rebar3-purifier-" ++ os:getpid() ++ "-" ++ Rev),
+    Work = filename:join(
+        os:getenv("TMPDIR", "/tmp"),
+        "rebar3-purifier-" ++ os:getpid() ++ "-" ++ Rev
+    ),
     rp_util:rm_rf(Work),
     rp_util:ensure_dir(Work),
     try
         {0, _} = rp_util:run_quiet("git", ["init", "-q", "--bare", Work], Work, []),
-        case rp_util:run_quiet("git", ["-C", Work, "fetch", "-q", "--depth=1", Url, Rev], Work, []) of
-            {0, _} -> ok;
-            {S, Out} -> rp_util:fail("git fetch ~ts ~ts failed with exit status ~b:~n~ts", [Url, Rev, S, Out])
+        case
+            rp_util:run_quiet("git", ["-C", Work, "fetch", "-q", "--depth=1", Url, Rev], Work, [])
+        of
+            {0, _} ->
+                ok;
+            {S, Out} ->
+                rp_util:fail("git fetch ~ts ~ts failed with exit status ~b:~n~ts", [
+                    Url, Rev, S, Out
+                ])
         end,
         {0, Commit} = rp_util:run_quiet("git", ["-C", Work, "cat-file", "commit", Rev], Work, []),
         {0, Tree} = rp_util:run_quiet("git", ["-C", Work, "ls-tree", "-r", "-z", Rev], Work, []),

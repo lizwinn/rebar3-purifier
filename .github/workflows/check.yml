@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: MIT
+#
+# Checks every pull request and every push to main, on x86_64-linux and
+# aarch64-linux.
+#
+# `flake-check` builds the flake's checks: the fixtures offline from their
+# lockfiles, the rebar3-purifier command with its unit tests, and the
+# formatting. `scripts` runs the checks that need Nix or the network and
+# so cannot run in the Nix sandbox: interactive mode (with the Erlang
+# Language Platform), the common mistakes, and publishing. `relock` locks
+# the fixtures again and fails when a lockfile differs from the committed
+# one. `real-world` works through real projects pinned to a commit.
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  flake-check:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the checks
+        run: nix flake check --print-build-logs
+
+  scripts:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Interactive mode
+        run: nix shell nixpkgs#erlang-language-platform -c tests/interactive.sh toolchain
+      - name: Common mistakes
+        run: tests/negative.sh toolchain
+      - name: Publishing
+        run: tests/publish.sh toolchain
+
+  relock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Relock the fixtures
+        run: |
+          nix build .#toolchain --out-link toolchain
+          for fixture in hello umbrella; do
+            (cd tests/fixtures/$fixture && ../../../toolchain/bin/rebar3-purifier relock)
+          done
+      - name: Compare with the committed lockfiles
+        run: git diff --exit-code -- 'tests/fixtures/*/rebar3-purifier.lock.json' 'tests/fixtures/*/rebar.lock'
+
+  real-world:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        project: [erlang_ls, elvis]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Work through ${{ matrix.project }}
+        run: tests/real-world.sh toolchain ${{ matrix.project }}
