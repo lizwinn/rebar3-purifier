@@ -5,10 +5,8 @@ records the files rebar3 wants to download, so that Nix can build the
 project in its sandbox, and it points the everyday rebar3 at the same
 downloads. You do not commit any generated Nix files to your repository.
 
-rebar3-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io)
-and meets their contract, which
-[CONTRACT.md](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md)
-in the shared library describes.
+rebar3-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io),
+which share one interface. It supports x86_64-linux and aarch64-linux.
 
 ## Quickstart
 
@@ -122,8 +120,7 @@ and the Erlang Language Platform (`elp`). It keeps them alive with
 garbage-collector roots in `.rebar3-purifier-gcroots` beside the
 lockfile, which `.gitignore` should list. After a prefetch, `rebar3 compile`,
 `rebar3 eunit`, `rebar3 release` and the editor work with the network cut
-off. The `conformance-offline` job checks this in a network namespace with
-no network.
+off.
 
 ## Editor
 
@@ -184,9 +181,6 @@ Refused or limited:
   run, for Hex repositories and credentials, but not in the sandbox. A
   plugin that only the global configuration names is downloaded by the
   lock run, and the build does not load it.
-- The `REBAR_OFFLINE` mode of rebar3 3.28 crashes on Hex dependencies.
-  The sandbox has no network, and interactive mode points Hex at a closed
-  port, so rebar3 falls back to the cached tarballs without it.
 
 What the lockfile holds, and why `rebar.lock` does not: `rebar.lock` is the
 resolution of the default profile, and it holds the outer checksum of every
@@ -215,33 +209,62 @@ Three more decisions:
 
 ## Examples
 
-Two real projects show the purifier at work. `tests/real-world.sh` takes
-each one at a pinned commit, and CI on x86_64-linux and aarch64-linux locks
-it, builds its escript in the Nix sandbox and runs it, compiles it with the
-offline rebar3, and locks it again to check that the lockfile is reproduced
-byte for byte. They are examples, and the purifier is not limited to
-projects like them.
+### erlang_ls
 
-- [erlang_ls](https://github.com/erlang-ls/erlang_ls) at `3a79185`: two
-  applications, Hex dependencies (one renamed), git dependencies by commit
-  and by tag, Hex plugins and a git plugin by branch, and an escript.
-- [elvis](https://github.com/inaka/elvis) at `c4ca8fa`: Hex dependencies,
-  Hex plugins including rebar3_hex with an ex_doc documentation provider,
-  and an escript.
+[erlang_ls](https://github.com/erlang-ls/erlang_ls) is a language server
+for Erlang, built as an escript. To build it with Nix, clone it, lock it,
+and add a flake to the checkout:
 
-## Development
+```zsh
+git clone https://github.com/erlang-ls/erlang_ls
+cd erlang_ls
+nix run github:nix-purifiers/rebar3-purifier -- lock
+```
 
-`nix flake check` builds the fixtures and runs the checks that run in the
-sandbox: `conformance-stale`, `conformance-tampered`, `conformance-missing`,
-`conformance-malformed` and `conformance-external`, the unit tests of the
-`rebar3-purifier` command, and the formatting. The checks that need the
-network or Nix itself are jobs of the same names in
-`.github/workflows/check.yml`: `conformance-relock`, `conformance-update`,
-`conformance-rebuild` and `conformance-offline`. The scripts in `tests/`
-need Nix and the network, and take a toolchain built by
-`nix build .#toolchain --out-link toolchain`: `tests/interactive.sh`,
-`tests/offline.sh`, `tests/update.sh`, `tests/publish.sh` and
-`tests/real-world.sh <project>`. `docs/development` describes the code.
+Create `flake.nix` in the checkout:
+
+```nix
+{
+  inputs.rebar3-purifier.url = "github:nix-purifiers/rebar3-purifier";
+  inputs.nixpkgs.follows = "rebar3-purifier/nixpkgs";
+
+  outputs = { nixpkgs, rebar3-purifier, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      project = rebar3-purifier.lib.rebar3-purifier.buildRebar3Project {
+        inherit pkgs;
+        src = ./.;
+      };
+    in
+    {
+      packages.${system}.default = project.packages.escript-erlang_ls;
+    };
+}
+```
+
+Flakes see only the files that git tracks, so add the new files and build:
+
+```zsh
+git add flake.nix rebar3-purifier.lock.json
+nix build
+./result/bin/erlang_ls --version
+```
+
+### elvis
+
+[elvis](https://github.com/inaka/elvis) is a style checker for Erlang, also
+an escript, with Hex plugins. The steps are the same. Clone it, run the
+`lock` command in the checkout, and use the same `flake.nix` with
+`project.packages.escript-elvis` in place of `escript-erlang_ls`. The result
+is `result/bin/elvis`.
+
+### Your own project
+
+The same steps apply to a project of your own. The package to build is
+`project.packages.release-<name>` for a relx release, `escript-<name>` for
+an escript, or `app-<name>` for an application, and `project.tests` is the
+test run for `checks`.
 
 ## Credits
 
@@ -253,4 +276,5 @@ and the everyday tool reads the same locked downloads. The idea was inspired
 by the [cargo (libnix)](https://github.com/nixcloud/cargo) project of
 nixcloud. The shared library comes from
 [nix-purifiers/purifier](https://github.com/nix-purifiers/purifier).
+`docs/development` describes the code for contributors.
 rebar3-purifier is released under the MIT license.
