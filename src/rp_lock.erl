@@ -1,54 +1,58 @@
 %% SPDX-License-Identifier: MIT
 %%
-%% The lock run. It copies the build to _build/rebar3-purifier/lock-run,
-%% runs rebar3 there with an empty home and cache and with the network,
-%% once per locked profile, and records what rebar3 downloaded and what
-%% the build produces in rebar3-purifier.lock.json.
+%% The lock run of `rebar3-purifier lock` and `rebar3-purifier update`. It
+%% copies the build to _build/rebar3-purifier/lock-run, runs rebar3 there
+%% with an empty home and cache and with the network, once per locked
+%% profile, and records what rebar3 downloaded and what the build
+%% produces in rebar3-purifier.lock.json. `lock` keeps the resolution of
+%% rebar.lock, to which rebar3 adds only what is missing. `update` first
+%% runs `rebar3 upgrade` on every dependency, or on the named ones.
 -module(rp_lock).
 
--export([lock/2, repo_url/2, global_config_dir/0, https_url/1, hex_entries/2]).
+-export([lock/1, update/1, repo_url/2, global_config_dir/0, https_url/1, hex_entries/2]).
 
 -define(DEFAULT_PROFILES, ["default", "test", "prod"]).
 
-lock(Args, Force) ->
-    Root = cwd(),
+lock(Args) ->
+    {Project, Rest} = rp_util:project(Args),
+    {Profiles, []} = options(Rest, [], []),
+    write_lock(Project, Profiles, none).
+
+update(Args) ->
+    {Project, Rest} = rp_util:project(Args),
+    {Profiles, Packages} = options(Rest, [], []),
+    write_lock(
+        Project,
+        Profiles,
+        case Packages of
+            [] -> all;
+            _ -> Packages
+        end
+    ).
+
+%% The profiles to lock besides the default ones, and the package names.
+options(["--profile", P | Rest], Profiles, Packages) ->
+    options(Rest, [P | Profiles], Packages);
+options(["-" ++ _ = Option | _], _, _) ->
+    rp_util:fail("unknown option ~ts", [Option]);
+options([Package | Rest], Profiles, Packages) ->
+    options(Rest, Profiles, [Package | Packages]);
+options([], Profiles, Packages) ->
+    {lists:usort(?DEFAULT_PROFILES ++ Profiles), lists:reverse(Packages)}.
+
+write_lock(#{root := Root, lock_file := LockFile, rebar_lock := RebarLock} = P, Profiles, Upgrade) ->
     filelib:is_regular(filename:join(Root, "rebar.config")) orelse
         rp_util:fail("no rebar.config in ~ts", [Root]),
-    Profiles = lists:usort(?DEFAULT_PROFILES ++ profiles(Args)),
-    LockFile = rp_util:lock_file(Root),
-    case not Force andalso up_to_date(Root, LockFile, Profiles) of
-        true ->
-            io:format("~ts is up to date~n", [LockFile]);
-        false ->
-            write_lock(Root, LockFile, Profiles)
-    end,
-    ok.
-
-profiles(["--profile", P | Rest]) -> [P | profiles(Rest)];
-profiles([]) -> [];
-profiles(Other) -> rp_util:fail("unexpected arguments: ~ts", [lists:join(" ", Other)]).
-
-cwd() ->
-    {ok, Dir} = file:get_cwd(),
-    Dir.
-
-up_to_date(Root, LockFile, Profiles) ->
-    case rp_util:read_lock(LockFile) of
-        {ok, Lock} ->
-            Files = rp_util:definition_files(Root),
-            maps:get(<<"definitionHash">>, Lock) =:= rp_util:definition_hash(Root, Files) andalso
-                maps:get(<<"profiles">>, Lock) =:= [list_to_binary(P) || P <- Profiles];
-        {error, _} ->
-            false
-    end.
-
-write_lock(Root, LockFile, Profiles) ->
     Work = filename:join([Root, "_build", "rebar3-purifier", "lock-run"]),
     Project = filename:join(Work, "project"),
     Cache = filename:join(Work, "cache"),
     rp_util:rm_rf(Work),
     rp_util:ensure_dir(Project),
     copy_project(Root, Project),
+    case filelib:is_regular(RebarLock) of
+        true -> {ok, _} = file:copy(RebarLock, filename:join(Project, "rebar.lock"));
+        false -> ok
+    end,
     Env = [
         {"HOME", filename:join(Work, "home")},
         {"REBAR_CACHE_DIR", Cache},
@@ -56,47 +60,51 @@ write_lock(Root, LockFile, Profiles) ->
         %% Hex repositories and credentials it may hold.
         {"REBAR_GLOBAL_CONFIG_DIR", global_config_dir()}
     ],
+    case Upgrade of
+        none -> ok;
+        all -> rebar3(["upgrade", "--all"], Project, Env);
+        Packages -> rebar3(["upgrade", lists:join(",", Packages)], Project, Env)
+    end,
     lists:foreach(
-        fun(P) ->
-            Args =
-                case P of
-                    "default" -> ["compile"];
-                    _ -> ["as", P, "compile"]
-                end,
-            io:format(standard_error, "rebar3-purifier: rebar3 ~ts~n", [lists:join(" ", Args)]),
-            case rp_util:run("rebar3", Args, Project, Env) of
-                {0, _} ->
-                    ok;
-                {Status, _} ->
-                    rp_util:fail("rebar3 ~ts failed with exit status ~b", [
-                        lists:join(" ", Args), Status
-                    ])
-            end
+        fun
+            ("default") -> rebar3(["compile"], Project, Env);
+            (Profile) -> rebar3(["as", Profile, "compile"], Project, Env)
         end,
         Profiles
     ),
-    update_rebar_lock(Root, Project),
+    update_rebar_lock(RebarLock, Project),
     Config = rp_util:consult(filename:join(Root, "rebar.config")),
     Tarballs = hex_entries(Cache, Config),
     {GitEntries, GitSources} = git_entries(Project),
-    Files = rp_util:definition_files(Root),
+    Files = rp_util:definition_files(Root, RebarLock),
     Lock = #{
         version => rp_util:lock_version(),
         rebar3Version => rebar3_version(Project),
         otpRelease => list_to_binary(erlang:system_info(otp_release)),
-        profiles => [list_to_binary(P) || P <- Profiles],
+        profiles => [list_to_binary(Profile) || Profile <- Profiles],
         definitionFiles => [list_to_binary(F) || F <- Files],
-        definitionHash => rp_util:definition_hash(Root, Files),
-        artifacts => lists:sort(
-            fun(A, B) -> maps:get(path, A) =< maps:get(path, B) end,
-            Tarballs ++ GitEntries
-        ),
-        gitSources => GitSources,
+        definitionHash => rp_util:definition_hash(P, Files),
+        %% The Hex tarballs that rebar.lock does not supply: plugins,
+        %% dependencies of profiles, and packages from other repositories.
+        hexTarballs => sort_by(path, Tarballs -- rp_util:derived_hex(RebarLock)),
+        git => sort_by(rev, [
+            git_record(E, GitSources, rp_util:locked_git(RebarLock))
+         || E <- GitEntries
+        ]),
         outputs => outputs(Root, Project, Config)
     },
     add_private_tarballs(Cache, Tarballs),
-    rp_util:write_json(LockFile, Lock),
+    rp_util:ensure_dir(filename:dirname(LockFile)),
+    rp_util:write_lock(LockFile, Lock),
     io:format("wrote ~ts~n", [LockFile]).
+
+rebar3(Args, Project, Env) ->
+    Line = lists:flatten(lists:join(" ", Args)),
+    io:format(standard_error, "rebar3-purifier: rebar3 ~ts~n", [Line]),
+    case rp_util:run("rebar3", Args, Project, Env) of
+        {0, _} -> ok;
+        {Status, _} -> rp_util:fail("rebar3 ~ts failed with exit status ~b", [Line, Status])
+    end.
 
 copy_project(Root, Project) ->
     {ok, Names} = file:list_dir_all(Root),
@@ -108,19 +116,20 @@ copy_project(Root, Project) ->
     ).
 
 %% When the lock run resolved dependencies rebar.lock did not hold, the
-%% build needs that resolution, so it goes back to the project.
-update_rebar_lock(Root, Project) ->
+%% build needs that resolution, so it goes to the rebar.lock the build
+%% uses: the rebar.lock in the project, or the rebar.lock beside a
+%% lockfile outside the project.
+update_rebar_lock(RebarLock, Project) ->
     New = filename:join(Project, "rebar.lock"),
-    Old = filename:join(Root, "rebar.lock"),
-    case {file:read_file(New), file:read_file(Old)} of
+    case {file:read_file(New), file:read_file(RebarLock)} of
         {{ok, Same}, {ok, Same}} ->
             ok;
         {{ok, Bin}, _} ->
-            ok = file:write_file(Old, Bin),
+            ok = file:write_file(RebarLock, Bin),
             io:format(
                 standard_error,
-                "rebar3-purifier: updated rebar.lock; commit it with the lockfile~n",
-                []
+                "rebar3-purifier: updated ~ts; commit it with the lockfile~n",
+                [RebarLock]
             );
         {{error, enoent}, _} ->
             ok
@@ -274,13 +283,8 @@ git_entries(Project) ->
     ],
     {Entries, Sources}.
 
-%% The dependencies in rebar.lock, in either of its formats.
 rebar_lock_deps(Project) ->
-    case rp_util:consult(filename:join(Project, "rebar.lock")) of
-        [{_Version, Deps} | _] when is_list(Deps) -> Deps;
-        [Deps] when is_list(Deps) -> Deps;
-        _ -> []
-    end.
+    element(1, rp_util:rebar_lock(filename:join(Project, "rebar.lock"))).
 
 git_repo(Dir) ->
     Url = git_line(Dir, ["config", "--get", "remote.origin.url"]),
@@ -320,6 +324,37 @@ git_entry(Url, Rev, {Object, Gitlinks}) ->
         {Status, Out} ->
             rp_util:fail("nix-prefetch-git ~ts failed with exit status ~b:~n~ts", [Url, Status, Out])
     end.
+
+%% What the lockfile records of a checkout: the commit, the hash of the
+%% plain checkout and the commit object, none of which rebar.lock holds.
+%% `url`, the HTTPS URL that Nix fetches from, is there when rebar.lock
+%% does not name the commit at that URL. `sources` lists the URLs that
+%% rebar3 clones the commit from, with the tags and branches it clones by,
+%% except the URL rebar.lock names, from which rebar3 fetches the commit
+%% itself.
+git_record(
+    #{git := #{url := Url, rev := Rev, commitObject := Object}, hash := Hash}, Sources, Locked
+) ->
+    LockedUrls = [U || {U, R} <- Locked, R =:= Rev],
+    Path = <<"git/", Rev/binary>>,
+    Record = #{
+        rev => Rev,
+        hash => Hash,
+        commitObject => Object,
+        sources => [
+            maps:with([url, tags, branches], S)
+         || S = #{path := P, url := U} <- Sources,
+            P =:= Path,
+            not lists:member(U, LockedUrls)
+        ]
+    },
+    case lists:member(Url, LockedUrls) of
+        true -> Record;
+        false -> Record#{url => Url}
+    end.
+
+sort_by(Key, Maps) ->
+    lists:sort(fun(A, B) -> maps:get(Key, A) =< maps:get(Key, B) end, Maps).
 
 https_url("git@" ++ Rest) ->
     case string:split(Rest, ":") of

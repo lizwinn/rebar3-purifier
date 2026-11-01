@@ -22,21 +22,39 @@
 -define(INDEX_VERSION, 7).
 
 %% The builder of the cache tree in Nix. The manifest lists one entry per
-%% line, its path in the tree and its store path, separated by a tab. A
-%% file entry, and a git entry without `leaveDotGit`, is linked at its
-%% path. A git entry with `leaveDotGit` is a checkout with the .git
-%% directory the shared purifier library rebuilt, and its path gets a bare
-%% repository of that .git directory, with the tags and branches the
-%% lockfile's gitSources record for it.
+%% line, its path in the tree and its store path, separated by a tab. The
+%% entries file holds the download entries that nix/lib/read-lock.nix
+%% reads from the lockfile and rebar.lock, where each git entry carries the
+%% URLs rebar3 clones it from as `rebar3Sources`. A file
+%% entry, and a git entry without `leaveDotGit`, is linked at its path. A
+%% git entry with `leaveDotGit` is a checkout with the .git directory the
+%% shared purifier library rebuilt, and its path gets a bare repository of
+%% that .git directory, with the tags and branches of its git sources.
 build_cache() ->
     Out = os:getenv("out"),
     {ok, Manifest} = file:read_file(os:getenv("manifestPath")),
-    {ok, Lock} = rp_util:read_lock(os:getenv("lockFile")),
-    Artifacts = maps:from_list([{P, A} || A = #{<<"path">> := P} <- maps:get(<<"artifacts">>, Lock)]),
-    Sources = maps:from_list([
-        {P, S}
-     || S = #{<<"path">> := P} <- maps:get(<<"gitSources">>, Lock, [])
-    ]),
+    {ok, EntriesJson} = file:read_file(os:getenv("entriesPath")),
+    Entries = json:decode(EntriesJson),
+    GitSources = [
+        S#{<<"path">> => P}
+     || #{<<"path">> := P, <<"rebar3Sources">> := Ss} <- Entries,
+        S <- Ss
+    ],
+    Artifacts = maps:from_list([{P, A} || A = #{<<"path">> := P} <- Entries]),
+    Sources = maps:map(
+        fun(_, Ss) ->
+            #{
+                <<"tags">> => lists:usort(lists:append([maps:get(<<"tags">>, S) || S <- Ss])),
+                <<"branches">> => lists:usort(
+                    lists:append([maps:get(<<"branches">>, S) || S <- Ss])
+                )
+            }
+        end,
+        maps:groups_from_list(fun(#{<<"path">> := P}) -> P end, GitSources)
+    ),
+    %% The interactive rebar3 points git at the repositories by these URLs.
+    rp_util:ensure_dir(Out),
+    rp_util:write_json(filename:join(Out, "git-sources.json"), GitSources),
     Lines = [L || L <- binary:split(Manifest, <<"\n">>, [global]), L =/= <<>>],
     lists:foreach(
         fun(Line) ->

@@ -4,7 +4,9 @@
 # under that name. It runs the real rebar3 against the locked downloads of
 # a build that has a current rebar3-purifier.lock.json, and the usual way
 # otherwise. `rebar3-purifier` sits beside it, for `rebar3-purifier lock`
-# and `rebar3-purifier publish`.
+# `rebar3-purifier prefetch` and `rebar3-purifier publish`. `elp`, the
+# Erlang Language Platform, is the language server for editors, and runs
+# the wrapper too.
 #
 # Both take git, for git dependencies, and nix-prefetch-git, for locking
 # them, from the end of PATH, so a git on the user's PATH comes first. The
@@ -18,6 +20,7 @@
   beamPackages,
   git,
   nix-prefetch-git,
+  erlang-language-platform,
   path,
   cli,
   # The source of the shared purifier library; the package overlay passes
@@ -62,7 +65,10 @@ runCommand "rebar3-purifier-toolchain-${rebar3.version}"
     for tool in ${erlang}/bin/*; do
       ln -s "$tool" "$out/bin/$(basename "$tool")"
     done
-    makeWrapper ${lib.getExe cli} "$out/bin/rebar3-purifier" ${wrapperArgs}
+    ln -s ${erlang-language-platform}/bin/elp "$out/bin/elp"
+    # `rebar3-purifier prefetch` keeps the toolchain alive with a GC root.
+    makeWrapper ${lib.getExe cli} "$out/bin/rebar3-purifier" ${wrapperArgs} \
+      --set REBAR3_PURIFIER_TOOLCHAIN "$out"
     cat > "$out/bin/rebar3" <<EOF
     #!${runtimeShell}
     env=\$("$out/bin/rebar3-purifier" env) || exit \$?

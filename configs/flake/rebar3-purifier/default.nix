@@ -65,6 +65,8 @@
             checks = import ../../../tests {
               inherit pkgs;
               overlay = self.overlays.default;
+              inherit (self.lib.rebar3-purifier) buildRebar3Project;
+              purifierSrc = self.inputs.purifier.outPath;
             };
             treefmt.programs.nixfmt.enable = true;
             treefmt.programs.erlfmt.enable = true;

@@ -1,90 +1,96 @@
 %% SPDX-License-Identifier: MIT
 %%
-%% `rebar3-purifier publish`: builds the Hex packages of the lockfile's
-%% outputs through Nix, from the project directory, and uploads those
-%% tarballs to the Hex API with rebar3's own Hex client. Nothing is built
-%% outside the sandbox.
+%% `rebar3-purifier publish`: builds the `release` of buildRebar3Project,
+%% the Hex package tarballs of the project, through Nix from the project
+%% directory, and uploads those tarballs to the Hex API with rebar3's own
+%% Hex client. Nothing is built outside the sandbox.
 %%
 %% HEX_API_KEY holds the key to publish with. HEX_API_URL replaces the
 %% default API (https://hex.pm/api), and HEX_ORGANIZATION publishes into an
 %% organization. `--dry-run` builds and prints the tarballs without
-%% uploading them.
+%% uploading them. Named applications limit the upload to their packages.
 -module(rp_publish).
 
 -export([publish/1]).
 
 publish(Args) ->
-    DryRun = lists:member("--dry-run", Args),
-    Selected = Args -- ["--dry-run"],
-    {ok, Root} = file:get_cwd(),
-    LockFile = rp_util:lock_file(Root),
-    Lock =
-        case rp_util:read_lock(LockFile) of
-            {ok, L} ->
-                L;
-            {error, _} ->
-                rp_util:fail("~ts is missing or from another version; run `rebar3-purifier lock`", [
-                    LockFile
-                ])
-        end,
-    maps:get(<<"definitionHash">>, Lock) =:=
-        rp_util:definition_hash(Root, rp_util:definition_files(Root)) orelse
-        rp_util:fail("~ts is out of date; run `rebar3-purifier lock` and commit it first", [
-            LockFile
-        ]),
+    {Project, Rest} = rp_util:project(Args),
+    DryRun = lists:member("--dry-run", Rest),
+    Selected = Rest -- ["--dry-run"],
+    Lock = rp_check:current(Project),
     Packages = [
-        maps:get(<<"name">>, P)
+        {maps:get(<<"name">>, P), maps:get(<<"version">>, P)}
      || P <- maps:get(<<"hexPackages">>, maps:get(<<"outputs">>, Lock))
     ],
     Packages =/= [] orelse
         rp_util:fail(
-            "the lockfile lists no Hex packages; add rebar3_hex to project_plugins and relock", []
+            "the lockfile lists no Hex packages; add rebar3_hex to project_plugins and run "
+            "`rebar3-purifier lock`",
+            []
         ),
     Names =
         case Selected of
-            [] -> Packages;
+            [] -> [N || {N, _} <- Packages];
             _ -> [list_to_binary(S) || S <- Selected]
         end,
     [
-        lists:member(N, Packages) orelse rp_util:fail("~ts is not a Hex package of this build", [N])
+        lists:keymember(N, 1, Packages) orelse
+            rp_util:fail("~ts is not a Hex package of this build", [N])
      || N <- Names
     ],
-    Tarballs = [build(Root, N) || N <- Names],
+    Release = build(Project),
+    Tarballs = [
+        filename:join(Release, <<N/binary, "-", V/binary, ".tar">>)
+     || {N, V} <- Packages, lists:member(N, Names)
+    ],
     case DryRun of
         true -> [io:format("~ts~n", [T]) || T <- Tarballs];
         false -> [upload(T) || T <- Tarballs]
     end,
     ok.
 
-%% The tarball of package Name, built by buildRebar3Project from the
-%% project directory, with a GC root under _build/rebar3-purifier.
-build(Root, Name) ->
-    Link = filename:join([Root, "_build", "rebar3-purifier", "publish", binary_to_list(Name)]),
+%% The `release` of buildRebar3Project, built from the project directory,
+%% with a GC root under _build/rebar3-purifier.
+build(#{root := Root, lock_file := LockFile, rebar_lock := RebarLock}) ->
+    Link = filename:join([Root, "_build", "rebar3-purifier", "publish"]),
     rp_util:ensure_dir(filename:dirname(Link)),
+    RebarLockArg =
+        case RebarLock =:= filename:join(Root, "rebar.lock") of
+            true -> "";
+            false -> ["rebarLock = ", nix_path(RebarLock), "; "]
+        end,
     Expr = iolist_to_binary([
         "let pkgs = import ",
         nix_string(env("REBAR3_PURIFIER_NIXPKGS")),
         " { }; ",
-        "build = pkgs.callPackage ",
-        nix_string(filename:join(env("REBAR3_PURIFIER_NIX_LIB"), "build-rebar3-project.nix")),
-        " { rebar3-purifier.cli = builtins.storePath ",
-        nix_string(cli_package()),
-        "; purifier = import (builtins.storePath ",
+        "purifier = import (builtins.storePath ",
         nix_string(env("REBAR3_PURIFIER_PURIFIER_SRC")),
-        " + \"/nix/lib\") { inherit (pkgs) lib; }; }; ",
-        "in (build { src = builtins.path { path = ",
-        nix_string(Root),
+        " + \"/nix/lib\") { inherit (pkgs) lib; }; ",
+        "build = import ",
+        nix_string(filename:join(env("REBAR3_PURIFIER_NIX_LIB"), "build-rebar3-project.nix")),
+        " { inherit (pkgs) lib; inherit purifier; }; ",
+        "in (build { inherit pkgs; cli = builtins.storePath ",
+        nix_string(cli_package()),
+        "; src = builtins.path { path = ",
+        nix_path(Root),
         "; name = \"source\"; ",
-        "filter = p: t: baseNameOf p != \"_build\" && baseNameOf p != \".git\"; }; }).hexPackages.",
-        nix_attr(Name)
+        "filter = p: t: !builtins.elem (baseNameOf p) [ \"_build\" \".git\" \".rebar3-purifier-gcroots\" ]; }; ",
+        "lockFile = ",
+        nix_path(LockFile),
+        "; ",
+        RebarLockArg,
+        "}).release"
     ]),
     case rp_util:run("nix-build", ["-E", binary_to_list(Expr), "--out-link", Link], Root, []) of
         {0, _} ->
-            [Tarball] = filelib:wildcard(filename:join(Link, "*.tar")),
-            Tarball;
+            {ok, Release} = file:read_link_all(Link),
+            Release;
         {Status, _} ->
-            rp_util:fail("building the Hex package ~ts failed with exit status ~b", [Name, Status])
+            rp_util:fail("building the Hex packages failed with exit status ~b", [Status])
     end.
+
+%% An absolute path as a Nix path.
+nix_path(Path) -> ["(/. + ", nix_string(Path), ")"].
 
 %% The store path of the rebar3-purifier package, from the path of its
 %% command.
@@ -108,8 +114,6 @@ nix_string(S) ->
         unicode:characters_to_list(S)
     ),
     [$", Escaped, $"].
-
-nix_attr(Name) -> nix_string(Name).
 
 upload(Tarball) ->
     Key =

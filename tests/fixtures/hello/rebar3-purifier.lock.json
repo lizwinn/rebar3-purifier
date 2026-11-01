@@ -1,31 +1,31 @@
 {
-  "artifacts": [
+  "contentHash": "sha256-JkKbJ6hMwtMpDM5zJdk2eBTwoRWpUthsCFqZJC+IsBw=",
+  "definitionFiles": [
+    "rebar.config",
+    "rebar.lock"
+  ],
+  "definitionHash": "sha256-YdQeprs3xx5CzmMt3KaAzvwNkk4j5gW1PzcYl4I2LEo=",
+  "git": [
     {
-      "git": {
-        "commitObject": {
-          "gitlinks": [],
-          "object": "dHJlZSAwNDk1MjZlZjYwNzI4NWU4MTQ5OWVlZDM2ZDM5MzY4ZmM2MDk0ZGQ1CnBhcmVudCA0NzQ2NTFjMWJhN2ZiMWYxZTc2MmI4OGMxNjE2NDk3ZjA2ODI1Njc0CmF1dGhvciBBZGFtIExpbmRiZXJnIDxoZWxsb0BhbGluZC5pbz4gMTczNDA4MTM4OCArMDEwMApjb21taXR0ZXIgQWRhbSBMaW5kYmVyZyA8aGVsbG9AYWxpbmQuaW8+IDE3MzQwODE0NzQgKzAxMDAKZ3Bnc2lnIC0tLS0tQkVHSU4gU1NIIFNJR05BVFVSRS0tLS0tCiBVMU5JVTBsSEFBQUFBUUFBQURNQUFBQUxjM05vTFdWa01qVTFNVGtBQUFBZ25UZURreGZLV0ZwcWNWaXI1b1VEOXcwUTd6CiAxRENWMDJoK1VtaHIrSzR2NEFBQUFEWjJsMEFBQUFBQUFBQUFaemFHRTFNVElBQUFCVEFBQUFDM056YUMxbFpESTFOVEU1CiBBQUFBUU1SRUl4OE9EaksySVV1RGozWEMxd3Zkd2M5akFYLy90NWZhT0F3WDRneVd6N0ZxWTgwcWcvUVUvUTAzWTBlWHFmCiA1MzMzYUNOYkNXVXAya2tWMGpUZ1U9CiAtLS0tLUVORCBTU0ggU0lHTkFUVVJFLS0tLS0KClVzZSBleF9kb2MgaW5zdGVhZCBvZiBlZG9jCg=="
-        },
-        "leaveDotGit": true,
-        "rev": "29360b25b708b2dc9d68a4f46f6a1b8b55f72518",
-        "submodules": false,
-        "url": "https://github.com/eproxus/meck.git"
+      "commitObject": {
+        "gitlinks": [],
+        "object": "dHJlZSAwNDk1MjZlZjYwNzI4NWU4MTQ5OWVlZDM2ZDM5MzY4ZmM2MDk0ZGQ1CnBhcmVudCA0NzQ2NTFjMWJhN2ZiMWYxZTc2MmI4OGMxNjE2NDk3ZjA2ODI1Njc0CmF1dGhvciBBZGFtIExpbmRiZXJnIDxoZWxsb0BhbGluZC5pbz4gMTczNDA4MTM4OCArMDEwMApjb21taXR0ZXIgQWRhbSBMaW5kYmVyZyA8aGVsbG9AYWxpbmQuaW8+IDE3MzQwODE0NzQgKzAxMDAKZ3Bnc2lnIC0tLS0tQkVHSU4gU1NIIFNJR05BVFVSRS0tLS0tCiBVMU5JVTBsSEFBQUFBUUFBQURNQUFBQUxjM05vTFdWa01qVTFNVGtBQUFBZ25UZURreGZLV0ZwcWNWaXI1b1VEOXcwUTd6CiAxRENWMDJoK1VtaHIrSzR2NEFBQUFEWjJsMEFBQUFBQUFBQUFaemFHRTFNVElBQUFCVEFBQUFDM056YUMxbFpESTFOVEU1CiBBQUFBUU1SRUl4OE9EaksySVV1RGozWEMxd3Zkd2M5akFYLy90NWZhT0F3WDRneVd6N0ZxWTgwcWcvUVUvUTAzWTBlWHFmCiA1MzMzYUNOYkNXVXAya2tWMGpUZ1U9CiAtLS0tLUVORCBTU0ggU0lHTkFUVVJFLS0tLS0KClVzZSBleF9kb2MgaW5zdGVhZCBvZiBlZG9jCg=="
       },
       "hash": "sha256-qDMPotYsvQU+XKUWFqt5YsTobmrktejpWah0qWaNpFE=",
-      "path": "git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518"
-    },
-    {
-      "hash": "sha256-inq+bRgzcs6yHKonCb7JKKsrcuGKORGqF3Fjm++CZR4=",
-      "mirrors": [],
-      "path": "hex/hexpm/packages/cowboy-2.12.0.tar",
-      "url": "https://repo.hex.pm/tarballs/cowboy-2.12.0.tar"
-    },
-    {
-      "hash": "sha256-4eEoTcP8Awpksa0Ng4KufpnaRsMka4FTGKS4SIc4AKQ=",
-      "mirrors": [],
-      "path": "hex/hexpm/packages/cowlib-2.13.0.tar",
-      "url": "https://repo.hex.pm/tarballs/cowlib-2.13.0.tar"
-    },
+      "rev": "29360b25b708b2dc9d68a4f46f6a1b8b55f72518",
+      "sources": [
+        {
+          "branches": [],
+          "tags": [
+            "1.0.0"
+          ],
+          "url": "https://github.com/eproxus/meck.git"
+        }
+      ],
+      "url": "https://github.com/eproxus/meck.git"
+    }
+  ],
+  "hexTarballs": [
     {
       "hash": "sha256-94PKioNnyS+W7HXI/uLGNu/Q85rEX/V9jYJacbS5V9M=",
       "mirrors": [],
@@ -39,18 +39,6 @@
       "url": "https://repo.hex.pm/tarballs/hex_core-0.21.1.tar"
     },
     {
-      "hash": "sha256-DFzI/cEbU8wlz2WsZwWtOeVOzFbRwi5K249aU/uUJ/M=",
-      "mirrors": [],
-      "path": "hex/hexpm/packages/jsx-3.1.0.tar",
-      "url": "https://repo.hex.pm/tarballs/jsx-3.1.0.tar"
-    },
-    {
-      "hash": "sha256-SfvP02gvqx9dEJNRthJXZ22hov2+KVkEF21eUhot3+U=",
-      "mirrors": [],
-      "path": "hex/hexpm/packages/ranch-1.8.0.tar",
-      "url": "https://repo.hex.pm/tarballs/ranch-1.8.0.tar"
-    },
-    {
       "hash": "sha256-F++JXD1sBhTOdi3wKb/aCNaZhnX0AAiYP6K4HT5dtg8=",
       "mirrors": [],
       "path": "hex/hexpm/packages/rebar3_hex-7.4.0.tar",
@@ -61,21 +49,6 @@
       "mirrors": [],
       "path": "hex/hexpm/packages/verl-1.1.1.tar",
       "url": "https://repo.hex.pm/tarballs/verl-1.1.1.tar"
-    }
-  ],
-  "definitionFiles": [
-    "rebar.config",
-    "rebar.lock"
-  ],
-  "definitionHash": "sha256-PIeuuallGMu4yg/Moz+xc+HF3sWP7GK4gmRQXwpVVCI=",
-  "gitSources": [
-    {
-      "branches": [],
-      "path": "git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518",
-      "tags": [
-        "1.0.0"
-      ],
-      "url": "https://github.com/eproxus/meck.git"
     }
   ],
   "otpRelease": "28",
@@ -106,5 +79,5 @@
     "test"
   ],
   "rebar3Version": "3.28.0",
-  "version": 1
+  "version": 2
 }

@@ -1,75 +1,61 @@
 # SPDX-License-Identifier: MIT
 #
 # buildRebar3Project: the sandboxed build of a rebar3 project from the
-# lockfile `rebar3-purifier lock` writes next to its rebar.config.
+# lockfile that `rebar3-purifier lock` writes. The flake publishes it as
+# `lib.rebar3-purifier.buildRebar3Project`:
 #
-# The file is a package for callPackage: the first argument set is what it
-# takes from the package set, and the result is the builder. The
-# rebar3-purifier overlay (`overlays.default`) adds it to the package set
-# as `buildRebar3Project`, so a package written for callPackage takes it
-# like any other dependency:
+#   (rebar3-purifier.lib.rebar3-purifier.buildRebar3Project {
+#     inherit pkgs;
+#     src = ./.;
+#   }).packages.release-hello
 #
-#   { buildRebar3Project }: (buildRebar3Project { src = ./.; }).releases.hello
+# The lockfile lists the build's outputs, so every attribute of the result
+# is known at evaluation time. The result has
 #
-# and `buildRebar3Project.override` replaces what it takes from the set.
-# The lockfile lists the build's outputs, so every one is an attribute at
-# evaluation time. The builder returns
-#
-#   all                  one derivation with every output: lib/<app>,
-#                        releases/<release>, bin/<escript> and
-#                        hex/<package>-<version>.tar
-#   apps.<name>          each application of the project, compiled: its
-#                        ebin, priv and include directories in lib/<name>
-#   releases.<name>      each relx release, built with the release profile,
-#                        with its start script linked as bin/<name>
-#   escripts.<name>      the escript, when rebar.config configures one
-#   hexPackages.<name>   each Hex package tarball, when the project uses
-#                        rebar3_hex
-#   cache                the cache tree of the locked downloads
+#   packages.default            one derivation with every output:
+#                               lib/<app>, releases/<release>,
+#                               bin/<escript> and hex/<package>.tar
+#   packages.app-<name>         each application of the project, compiled:
+#                               its ebin, priv and include directories in
+#                               lib/<name>
+#   packages.release-<name>     each relx release, built with the release
+#                               profile, with its start script as bin/<name>
+#   packages.escript-<name>     the escript, when rebar.config configures one
+#   tests                       `rebar3 eunit`, and `rebar3 ct` when the
+#                               project has common test suites
+#   release                     the Hex package tarballs, which
+#                               `rebar3-purifier publish` uploads
+#   fetches                     the entries of the purifier library that
+#                               the build fetches
+#   cache                       the cache tree of the locked downloads
 {
   lib,
-  stdenv,
-  callPackage,
-  runCommand,
-  fetchurl,
-  fetchgit,
-  git,
-  beam,
-  makeWrapper,
-  coreutils,
-  gawk,
-  gnugrep,
-  gnused,
-  hostname,
-  # The rebar3-purifier package scope, whose `cli` builds the cache tree.
-  rebar3-purifier,
-  # The shared purifier library (`lib.purifier` of its flake), which
-  # fetches the locked downloads. The package overlay passes it.
+  # The shared purifier library (`lib.purifier` of its flake).
   purifier,
 }:
-let
-  defaultFetchurl = fetchurl;
-  defaultFetchgit = fetchgit;
-in
 {
-  # The project directory, with rebar.config and the lockfile.
+  # The package set to build with.
+  pkgs,
+  # The project directory, with rebar.config.
   src,
-  # The lockfile; the default is the one `rebar3-purifier lock` writes.
+  # Fetchers in place of nixpkgs' own, such as a fetchurl for a company
+  # mirror or with credentials. The purifier library's fetchEntry takes
+  # them, with the arguments of the nixpkgs fetchers of the same names.
+  fetchers ? { },
+  # The lockfile. It may lie outside `src`, for a project whose author does
+  # not keep one.
   lockFile ? src + "/rebar3-purifier.lock.json",
+  # The rebar.lock to build with, in place of the rebar.lock in `src`, for
+  # a project without one. `rebar3-purifier lock --lockfile` writes it
+  # beside the lockfile.
+  rebarLock ? null,
   # The BEAM package set to build with. The default is the one of the OTP
   # release the lock was made with, when nixpkgs has it.
   beamPackages ? null,
   # The rebar3-purifier command.
-  cli ? rebar3-purifier.cli,
-  # Replace the fetchers, for credentials or mirrors; the shared purifier
-  # library's fetchEntry passes them the arguments of nixpkgs' fetchers.
-  fetchurl ? defaultFetchurl,
-  fetchgit ? defaultFetchgit,
+  cli ? pkgs.callPackage ../../pkgs/cli { },
   # The profile releases are built with.
   releaseProfile ? "prod",
-  # Runs `rebar3 eunit`, and `rebar3 ct` when the project has common test
-  # suites, after the build.
-  doCheck ? false,
   buildInputs ? [ ],
   nativeBuildInputs ? [ ],
   # Filters src before it is copied into the store, as the `filter` of
@@ -78,8 +64,34 @@ in
   srcFilter ? null,
 }:
 let
-  lock = import ./lock.nix { inherit lockFile; };
-  inherit (lock) outputs;
+  inherit (pkgs)
+    stdenv
+    runCommand
+    git
+    beam
+    makeWrapper
+    coreutils
+    gawk
+    gnugrep
+    gnused
+    hostname
+    ;
+
+  readLock = import ./read-lock.nix { inherit lib; };
+  # The lock in memory, which checkLock of the purifier library stops at
+  # its problems, each naming the command that fixes it.
+  lock = purifier.checkLock (readLock {
+    inherit src lockFile rebarLock;
+  });
+  entries = purifier.entriesFor pkgs.stdenv.hostPlatform.system lock;
+
+  ofKind = kind: builtins.filter (o: o.kind == kind) (builtins.attrValues lock.outputs);
+  outputs = {
+    apps = ofKind "app";
+    releases = map (o: o.name) (ofKind "release");
+    escripts = map (o: o.name) (ofKind "escript");
+    hexPackages = ofKind "hexPackage";
+  };
 
   beamSet =
     if beamPackages != null then
@@ -88,13 +100,14 @@ let
       beam.packages."erlang_${lock.otpRelease}" or beam.packages.erlang;
   inherit (beamSet) erlang rebar3;
 
-  cache = callPackage ./cache.nix {
+  cache = import ./cache.nix {
     inherit
-      lockFile
-      cli
-      fetchurl
-      fetchgit
+      lib
+      pkgs
       purifier
+      fetchers
+      entries
+      cli
       ;
   };
 
@@ -107,17 +120,26 @@ let
       value = "*";
     }
   ]
-  ++ map (s: {
-    key = "url.${cache}/${s.path}.insteadOf";
-    value = s.url;
-  }) lock.gitSources;
+  ++ lib.concatMap (
+    e:
+    map (s: {
+      key = "url.${cache}/${e.path}.insteadOf";
+      value = s.url;
+    }) (e.rebar3Sources or [ ])
+  ) entries;
 
   defaultSrcFilter =
     path: type:
     let
       name = baseNameOf path;
     in
-    !(name == "_build" || name == ".git" || name == ".idea" || lib.hasPrefix "result" name);
+    !(
+      name == "_build"
+      || name == ".git"
+      || name == ".idea"
+      || name == ".rebar3-purifier-gcroots"
+      || lib.hasPrefix "result" name
+    );
 
   filteredSrc = builtins.path {
     path = src;
@@ -125,10 +147,16 @@ let
     filter = if srcFilter != null then srcFilter else defaultSrcFilter;
   };
 
-  firstApp = builtins.head outputs.apps;
+  # The application at the root of the project, or the first one under
+  # apps/ or lib/, names the build.
+  firstApp = lib.findFirst (a: a.dir == ".") (builtins.head outputs.apps) outputs.apps;
 
-  all = stdenv.mkDerivation {
-    pname = firstApp.name;
+  # What the build and the test run share: the source, the tools, and
+  # rebar3 set up with the locked downloads as its cache, a home and
+  # global configuration of its own, and Hex's default repository at an
+  # address that refuses connections, so it takes every tarball from the
+  # cache. The cache is a writable copy, since rebar3 writes into it.
+  common = {
     inherit (firstApp) version;
     src = filteredSrc;
     nativeBuildInputs = [
@@ -141,12 +169,12 @@ let
     # Escripts and release scripts find escript and erl through these.
     buildInputs = [ erlang ] ++ buildInputs;
 
-    # rebar3 runs with the locked downloads as its cache, a home and global
-    # configuration of its own, and Hex's default repository at an address
-    # that refuses connections, so it takes every tarball from the cache.
-    # The cache is a writable copy, since rebar3 writes into it.
     configurePhase = ''
       runHook preConfigure
+      ${lib.optionalString (rebarLock != null) ''
+        cp ${rebarLock} rebar.lock
+        chmod u+w rebar.lock
+      ''}
       ${cli}/bin/rebar3-purifier check . ${lockFile}
       ${cli}/bin/rebar3-purifier pin-versions . ${lockFile}
       export HOME="$TMPDIR/home"
@@ -164,69 +192,87 @@ let
       '') gitConfig}
       runHook postConfigure
     '';
-
-    buildPhase = ''
-      runHook preBuild
-      rebar3 compile
-      ${lib.concatMapStrings (r: ''
-        rebar3 as ${lib.escapeShellArg releaseProfile} release -n ${lib.escapeShellArg r}
-      '') outputs.releases}
-      ${lib.optionalString (outputs.escripts != [ ]) "rebar3 escriptize\n"}
-      # Each Hex package tarball, without its documentation, which the
-      # project's doc provider would build.
-      ${lib.concatMapStrings (p: ''
-        rebar3 hex build package --app ${lib.escapeShellArg p.name}
-      '') outputs.hexPackages}
-      runHook postBuild
-    '';
-
-    inherit doCheck;
-    checkPhase = ''
-      runHook preCheck
-      rebar3 eunit
-      if [ -n "$(find . -path ./_build -prune -o -name '*_SUITE.erl' -print)" ]; then
-        rebar3 ct
-      fi
-      runHook postCheck
-    '';
-
-    installPhase = ''
-      runHook preInstall
-      ${lib.concatMapStrings (a: ''
-        mkdir -p "$out/lib/${a.name}"
-        for d in ebin priv include; do
-          if [ -e "_build/default/lib/${a.name}/$d" ]; then
-            cp -rL "_build/default/lib/${a.name}/$d" "$out/lib/${a.name}/"
-          fi
-        done
-      '') outputs.apps}
-      ${lib.concatMapStrings (r: ''
-        mkdir -p "$out/releases"
-        cp -rL ${lib.escapeShellArg "_build/${releaseProfile}/rel/${r}"} "$out/releases/"
-        # The relx start script runs these tools from the PATH.
-        wrapProgram "$out/releases/${r}/bin/${r}" --prefix PATH : ${
-          lib.makeBinPath [
-            coreutils
-            gawk
-            gnugrep
-            gnused
-            hostname
-          ]
-        }
-      '') outputs.releases}
-      ${lib.concatMapStrings (e: ''
-        install -Dm755 "_build/default/bin/${e}" "$out/bin/${e}"
-      '') outputs.escripts}
-      ${lib.concatMapStrings (p: ''
-        install -Dm644 "_build/default/lib/${p.name}/hex/${p.name}-${p.version}.tar" \
-          "$out/hex/${p.name}-${p.version}.tar"
-      '') outputs.hexPackages}
-      runHook postInstall
-    '';
-
-    passthru = { inherit lock cache; };
-    meta.description = "${firstApp.name}, built by rebar3-purifier";
   };
+
+  all = stdenv.mkDerivation (
+    common
+    // {
+      pname = firstApp.name;
+
+      buildPhase = ''
+        runHook preBuild
+        rebar3 compile
+        ${lib.concatMapStrings (r: ''
+          rebar3 as ${lib.escapeShellArg releaseProfile} release -n ${lib.escapeShellArg r}
+        '') outputs.releases}
+        ${lib.optionalString (outputs.escripts != [ ]) "rebar3 escriptize\n"}
+        # Each Hex package tarball, without its documentation, which the
+        # project's doc provider would build.
+        ${lib.concatMapStrings (p: ''
+          rebar3 hex build package --app ${lib.escapeShellArg p.name}
+        '') outputs.hexPackages}
+        runHook postBuild
+      '';
+
+      installPhase = ''
+        runHook preInstall
+        ${lib.concatMapStrings (a: ''
+          mkdir -p "$out/lib/${a.name}"
+          for d in ebin priv include; do
+            if [ -e "_build/default/lib/${a.name}/$d" ]; then
+              cp -rL "_build/default/lib/${a.name}/$d" "$out/lib/${a.name}/"
+            fi
+          done
+        '') outputs.apps}
+        ${lib.concatMapStrings (r: ''
+          mkdir -p "$out/releases"
+          cp -rL ${lib.escapeShellArg "_build/${releaseProfile}/rel/${r}"} "$out/releases/"
+          # The relx start script runs these tools from the PATH.
+          wrapProgram "$out/releases/${r}/bin/${r}" --prefix PATH : ${
+            lib.makeBinPath [
+              coreutils
+              gawk
+              gnugrep
+              gnused
+              hostname
+            ]
+          }
+        '') outputs.releases}
+        ${lib.concatMapStrings (e: ''
+          install -Dm755 "_build/default/bin/${e}" "$out/bin/${e}"
+        '') outputs.escripts}
+        ${lib.concatMapStrings (p: ''
+          install -Dm644 "_build/default/lib/${p.name}/hex/${p.name}-${p.version}.tar" \
+            "$out/hex/${p.name}-${p.version}.tar"
+        '') outputs.hexPackages}
+        runHook postInstall
+      '';
+
+      passthru = { inherit lock cache; };
+      meta.description = "${firstApp.name}, built by rebar3-purifier";
+    }
+  );
+
+  tests = stdenv.mkDerivation (
+    common
+    // {
+      pname = "${firstApp.name}-tests";
+      dontBuild = true;
+      doCheck = true;
+      checkPhase = ''
+        runHook preCheck
+        rebar3 eunit
+        if [ -n "$(find . -path ./_build -prune -o -name '*_SUITE.erl' -print)" ]; then
+          rebar3 ct
+        fi
+        runHook postCheck
+      '';
+      installPhase = ''
+        touch $out
+      '';
+      meta.description = "the tests of ${firstApp.name}, run by rebar3-purifier";
+    }
+  );
 
   # One output of the build, as links into `all`, so that every output
   # comes from one build. `links` maps a path in the output to a path in
@@ -242,31 +288,39 @@ let
       )}
     '';
 
-  byName = list: f: lib.listToAttrs (map (x: lib.nameValuePair (x.name or x) (f x)) list);
+  byName =
+    prefix: list: f:
+    lib.listToAttrs (map (x: lib.nameValuePair "${prefix}-${x.name or x}" (f x)) list);
 in
 {
-  inherit all cache lock;
+  inherit tests cache;
 
-  apps = byName outputs.apps (
+  packages = {
+    default = all;
+  }
+  // byName "app" outputs.apps (
     a: link "${a.name}-${a.version}" { "lib/${a.name}" = "lib/${a.name}"; } { }
-  );
-
-  releases = byName outputs.releases (
+  )
+  // byName "release" outputs.releases (
     r:
     link r {
       "releases/${r}" = "releases/${r}";
       "bin/${r}" = "releases/${r}/bin/${r}";
     } { meta.mainProgram = r; }
-  );
-
-  escripts = byName outputs.escripts (
+  )
+  // byName "escript" outputs.escripts (
     e: link e { "bin/${e}" = "bin/${e}"; } { meta.mainProgram = e; }
   );
 
-  hexPackages = byName outputs.hexPackages (
-    p:
-    link "${p.name}-${p.version}" {
-      "${p.name}-${p.version}.tar" = "hex/${p.name}-${p.version}.tar";
-    } { }
-  );
+  release =
+    if outputs.hexPackages == [ ] then
+      throw "rebar3-purifier: ${firstApp.name} builds no Hex package; add rebar3_hex to project_plugins in rebar.config and run `rebar3-purifier lock`"
+    else
+      link "${firstApp.name}-hex-packages" (lib.listToAttrs (
+        map (
+          p: lib.nameValuePair "${p.name}-${p.version}.tar" "hex/${p.name}-${p.version}.tar"
+        ) outputs.hexPackages
+      )) { };
+
+  fetches = lock.entries;
 }

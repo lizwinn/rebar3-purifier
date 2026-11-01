@@ -100,8 +100,9 @@ hex_entries_test() ->
     ),
     rp_util:rm_rf(Cache).
 
-%% rebar.lock dependencies without a download in the lockfile, Hex and
-%% git, are named.
+%% rebar.lock dependencies without a download, Hex and git, are named. A
+%% Hex package of rebar.lock without an outer checksum needs its tarball
+%% in the lockfile.
 missing_test() ->
     Dir = tmp_dir("missing"),
     ok = file:write_file(filename:join(Dir, "rebar.lock"), <<
@@ -111,9 +112,30 @@ missing_test() ->
         " {<<\"meck\">>,{git,\"https://github.com/eproxus/meck.git\",{ref,\"abc\"}},0}]}.\n"
         "[].\n"
     >>),
-    Lock = #{<<"artifacts">> => [#{<<"path">> => <<"hex/hexpm/packages/jsx-3.1.0.tar">>}]},
-    ?assertEqual(["meck (git abc)", "ranch 1.8.0"], rp_check:missing(Dir, Lock)),
+    Lock = #{
+        <<"hexTarballs">> => [#{<<"path">> => <<"hex/hexpm/packages/jsx-3.1.0.tar">>}],
+        <<"git">> => []
+    },
+    ?assertEqual(
+        ["meck (git abc)", "ranch 1.8.0"],
+        rp_check:missing(filename:join(Dir, "rebar.lock"), Lock)
+    ),
     rp_util:rm_rf(Dir).
+
+%% The contentHash is the SHA-256 of the lockfile without it, in the JSON
+%% that builtins.toJSON of Nix writes. The expected value is what
+%% nix/lib/content-hash.nix gives for the same lockfile.
+content_hash_test() ->
+    Lock = #{
+        <<"version">> => 2,
+        <<"contentHash">> => <<"ignored">>,
+        <<"b">> => [true, null, <<"a\"b\\c\nd">>],
+        <<"a">> => #{}
+    },
+    ?assertEqual(
+        <<"sha256-ZtGrCQMEubd0A+9GZXBrsM75DXxEg8gLiKxqFhjMcII=">>,
+        rp_util:content_hash(Lock)
+    ).
 
 %% rp_git makes a bare repository of a .git directory, which git clones by
 %% a recorded tag or branch at the commit HEAD names.
@@ -175,7 +197,7 @@ pin_versions_test() ->
         <<"{application, b, [{vsn, \"2.0.0\"}]}.\n">>
     ),
     LockFile = filename:join(Dir, "lock.json"),
-    rp_util:write_json(LockFile, #{
+    rp_util:write_lock(LockFile, #{
         version => rp_util:lock_version(),
         outputs => #{
             apps => [

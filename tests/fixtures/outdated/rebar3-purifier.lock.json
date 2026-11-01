@@ -1,0 +1,30 @@
+{
+  "contentHash": "sha256-XvLhvfWr9N3GFv090jWYXhBbD7h0EsP4hlu/dwKOMwU=",
+  "definitionFiles": [
+    "rebar.config",
+    "rebar.lock"
+  ],
+  "definitionHash": "sha256-9E7X1JfhbPPn25NBDqir8H2PJjIYEDNANhdW4g/mXOI=",
+  "git": [],
+  "hexTarballs": [],
+  "otpRelease": "28",
+  "outputs": {
+    "apps": [
+      {
+        "dir": ".",
+        "name": "outdated",
+        "version": "0.1.0"
+      }
+    ],
+    "escripts": [],
+    "hexPackages": [],
+    "releases": []
+  },
+  "profiles": [
+    "default",
+    "prod",
+    "test"
+  ],
+  "rebar3Version": "3.28.0",
+  "version": 2
+}

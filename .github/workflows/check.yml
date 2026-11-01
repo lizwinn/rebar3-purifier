@@ -4,12 +4,19 @@
 # aarch64-linux.
 #
 # `flake-check` builds the flake's checks: the fixtures offline from their
-# lockfiles, the rebar3-purifier command with its unit tests, and the
-# formatting. `scripts` runs the checks that need Nix or the network and
-# so cannot run in the Nix sandbox: interactive mode (with the Erlang
-# Language Platform), the common mistakes, and publishing. `relock` locks
-# the fixtures again and fails when a lockfile differs from the committed
-# one. `real-world` works through real projects pinned to a commit.
+# lockfiles, the conformance checks that run in the Nix sandbox, the
+# rebar3-purifier command with its unit tests, and the formatting.
+# `scripts` runs the checks that need Nix or the network and so cannot
+# run in the sandbox: interactive mode with the Erlang Language Platform,
+# and publishing. The three conformance checks of the purifier contract
+# that cannot run in the sandbox are jobs of their own:
+# `conformance-relock` locks the fixtures again and fails when a lockfile
+# differs from the committed one, `conformance-update` updates a fixture
+# whose rebar.lock pins an old release, `conformance-rebuild` builds the
+# fixtures a second time and fails when the output differs, and
+# `conformance-offline` runs the everyday loop of the fixtures after
+# `rebar3-purifier prefetch` in a network namespace with no network.
+# `real-world` works through real projects pinned to a commit.
 name: check
 
 on:
@@ -43,25 +50,84 @@ jobs:
       - name: Build the toolchain
         run: nix build .#toolchain --out-link toolchain
       - name: Interactive mode
-        run: nix shell nixpkgs#erlang-language-platform -c tests/interactive.sh toolchain
-      - name: Common mistakes
-        run: tests/negative.sh toolchain
+        run: tests/interactive.sh toolchain
       - name: Publishing
         run: tests/publish.sh toolchain
 
-  relock:
-    runs-on: ubuntu-latest
+  conformance-relock:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
-      - name: Relock the fixtures
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Lock a copy of hello with its lockfiles outside it
         run: |
-          nix build .#toolchain --out-link toolchain
-          for fixture in hello umbrella; do
-            (cd tests/fixtures/$fixture && ../../../toolchain/bin/rebar3-purifier relock)
+          mkdir -p "$RUNNER_TEMP/external/locks"
+          cp -r tests/fixtures/hello "$RUNNER_TEMP/external/project"
+          rm "$RUNNER_TEMP/external/project/rebar3-purifier.lock.json"
+          cp tests/fixtures/hello/rebar.lock "$RUNNER_TEMP/external/locks/"
+          (cd "$RUNNER_TEMP/external/project" &&
+            "$GITHUB_WORKSPACE/toolchain/bin/rebar3-purifier" lock --lockfile ../locks/rebar3-purifier.lock.json)
+          cmp "$RUNNER_TEMP/external/locks/rebar3-purifier.lock.json" tests/fixtures/hello/rebar3-purifier.lock.json
+      - name: Lock the fixtures again
+        run: |
+          for fixture in hello umbrella outdated; do
+            (cd tests/fixtures/$fixture && ../../../toolchain/bin/rebar3-purifier lock)
           done
       - name: Compare with the committed lockfiles
         run: git diff --exit-code -- 'tests/fixtures/*/rebar3-purifier.lock.json' 'tests/fixtures/*/rebar.lock'
+
+  conformance-update:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Update the outdated fixture
+        run: tests/update.sh toolchain
+
+  conformance-rebuild:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the fixtures twice
+        run: |
+          system=$(nix eval --impure --raw --expr builtins.currentSystem)
+          for fixture in hello umbrella; do
+            nix build --print-build-logs ".#checks.$system.fixture-$fixture-build"
+            nix build --rebuild ".#checks.$system.fixture-$fixture-build"
+          done
+
+  conformance-offline:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      - name: Build the toolchain
+        run: nix build .#toolchain --out-link toolchain
+      - name: Prefetch the fixtures
+        run: tests/offline.sh toolchain prefetch "$RUNNER_TEMP/offline"
+      - name: Run the everyday loop with no network
+        # The network namespace has only a loopback device. The Nix daemon
+        # is reached through its socket in the file system.
+        run: |
+          sudo unshare --net -- sudo -u "$USER" env "PATH=$PATH" "HOME=$HOME" \
+            tests/offline.sh toolchain loop "$RUNNER_TEMP/offline"
 
   real-world:
     strategy:

@@ -3,3 +3,4 @@
 _build/
 .idea/
 .vscode/
+.rebar3-purifier-gcroots/

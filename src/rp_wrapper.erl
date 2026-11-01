@@ -1,75 +1,104 @@
 %% SPDX-License-Identifier: MIT
 %%
-%% Interactive mode. The flake's rebar3 runs `rebar3-purifier env` and
-%% evaluates what it prints before it runs the real rebar3. In a build with
-%% a current lockfile, that is the environment of the locked downloads:
-%% rebar3's cache is a tree of links into the store that holds every locked
-%% Hex tarball and the package index of exactly those versions, Hex's
-%% default repository points at an address that refuses connections, and
-%% git fetches each locked repository from its clone in the store. In any
-%% other build it prints nothing, and rebar3 resolves the usual way.
+%% Interactive mode and `rebar3-purifier prefetch`.
+%%
+%% The flake's rebar3 runs `rebar3-purifier env` and evaluates what it
+%% prints before it runs the real rebar3. In a project with a lockfile,
+%% that is the environment of the locked downloads: rebar3's cache is a
+%% tree of links into the store that holds every locked Hex tarball and
+%% the package index of exactly those versions, Hex's default repository
+%% points at an address that refuses connections, and git fetches each
+%% locked repository from its copy in the store. A lockfile that does not
+%% fit the project stops rebar3 with the error of rp_check. In a project
+%% without a lockfile it prints nothing, and rebar3 resolves the usual
+%% way. REBAR3_PURIFIER_LOCKFILE names a lockfile outside the project.
+%%
+%% `prefetch` builds the same tree, and keeps it and the toolchain alive
+%% with garbage-collector roots in .rebar3-purifier-gcroots beside the
+%% lockfile, so that the interactive rebar3 and the editor work afterwards
+%% without the network. The interactive rebar3 keeps the tree alive with
+%% the same root.
 -module(rp_wrapper).
 
--export([env/0, quote/1]).
+-export([env/0, prefetch/1, quote/1]).
 
 env() ->
-    {ok, Root} = file:get_cwd(),
-    LockFile = rp_util:lock_file(Root),
     case os:getenv("REBAR3_PURIFIER") of
-        "0" -> ok;
-        _ -> env(Root, LockFile, rp_util:read_lock(LockFile))
+        "0" ->
+            ok;
+        _ ->
+            {#{lock_file := LockFile} = Project, []} = rp_util:project([]),
+            case filelib:is_regular(LockFile) of
+                false ->
+                    ok;
+                true ->
+                    rp_check:current(Project),
+                    {Tree, Cache} = prepare(Project),
+                    {ok, Sources} = file:read_file(filename:join(Tree, "git-sources.json")),
+                    print(Tree, Cache, json:decode(Sources))
+            end
     end.
 
-env(_, _, {error, enoent}) ->
-    ok;
-env(_, LockFile, {error, version}) ->
-    warn(
-        "~ts was written by another rebar3-purifier version; run `rebar3-purifier relock`. "
-        "Resolving the usual way.",
-        [LockFile]
-    );
-env(Root, LockFile, {ok, Lock}) ->
-    Files = rp_util:definition_files(Root),
-    case maps:get(<<"definitionHash">>, Lock) =:= rp_util:definition_hash(Root, Files) of
-        false ->
-            warn(
-                "the build definition changed since ~ts was written; resolving the usual way "
-                "until `rebar3-purifier lock` renews it.",
-                [LockFile]
-            );
-        true ->
-            Tree = realize(Root, LockFile),
-            Cache = filename:join([Root, "_build", "rebar3-purifier", "cache"]),
-            mirror(Tree, Cache),
-            print(Tree, Cache, maps:get(<<"gitSources">>, Lock, []))
-    end.
+prefetch(Args) ->
+    {#{root := Root, gc_roots := Roots} = Project, Rest} = rp_util:project(Args),
+    Rest =:= [] orelse rp_util:fail("unexpected arguments: ~ts", [lists:join(" ", Rest)]),
+    rp_check:current(Project),
+    {Tree, _} = prepare(Project),
+    Toolchain = env_var("REBAR3_PURIFIER_TOOLCHAIN"),
+    Link = filename:join(Roots, "toolchain"),
+    case rp_util:run_quiet("nix-store", ["--realise", Toolchain, "--add-root", Link], Root, []) of
+        {0, _} ->
+            ok;
+        {Status, Out} ->
+            rp_util:fail("keeping the toolchain alive failed with exit status ~b:~n~ts", [
+                Status, Out
+            ])
+    end,
+    io:format(
+        "prefetched the locked downloads into ~ts, and the toolchain ~ts; "
+        "the garbage-collector roots are in ~ts~n",
+        [Tree, Toolchain, Roots]
+    ).
 
-warn(Format, Args) ->
-    io:format(standard_error, "rebar3-purifier: " ++ Format ++ "~n", Args),
-    ok.
+%% Builds the cache tree and its writable copy under _build.
+prepare(#{root := Root} = Project) ->
+    Tree = realize(Project),
+    Cache = filename:join([Root, "_build", "rebar3-purifier", "cache"]),
+    mirror(Tree, Cache),
+    {Tree, Cache}.
 
 %% Builds the cache tree of the lockfile through Nix, with one GC root
 %% under _build/rebar3-purifier, and returns its store path.
-realize(Root, LockFile) ->
-    Link = filename:join([Root, "_build", "rebar3-purifier", "cache-root"]),
-    rp_util:ensure_dir(filename:dirname(Link)),
-    Args = [
-        filename:join(env_var("REBAR3_PURIFIER_NIX_LIB"), "realize.nix"),
-        "--arg",
-        "lockFile",
-        LockFile,
-        "--argstr",
-        "cli",
-        env_var("REBAR3_PURIFIER_CLI"),
-        "--arg",
-        "nixpkgs",
-        env_var("REBAR3_PURIFIER_NIXPKGS"),
-        "--argstr",
-        "purifierSrc",
-        env_var("REBAR3_PURIFIER_PURIFIER_SRC"),
-        "--out-link",
-        Link
-    ],
+realize(#{root := Root, lock_file := LockFile, rebar_lock := RebarLock, gc_roots := Roots}) ->
+    Link = filename:join(Roots, "cache"),
+    rp_util:ensure_dir(Roots),
+    RebarLockArgs =
+        case RebarLock =:= filename:join(Root, "rebar.lock") of
+            true -> [];
+            false -> ["--arg", "rebarLock", RebarLock]
+        end,
+    Args =
+        RebarLockArgs ++
+            [
+                filename:join(env_var("REBAR3_PURIFIER_NIX_LIB"), "realize.nix"),
+                "--arg",
+                "src",
+                Root,
+                "--arg",
+                "lockFile",
+                LockFile,
+                "--argstr",
+                "cli",
+                env_var("REBAR3_PURIFIER_CLI"),
+                "--arg",
+                "nixpkgs",
+                env_var("REBAR3_PURIFIER_NIXPKGS"),
+                "--argstr",
+                "purifierSrc",
+                env_var("REBAR3_PURIFIER_PURIFIER_SRC"),
+                "--out-link",
+                Link
+            ],
     case rp_util:run_quiet("nix-build", Args, Root, []) of
         {0, _} ->
             {ok, Tree} = file:read_link_all(Link),

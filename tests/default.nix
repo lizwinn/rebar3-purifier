@@ -1,24 +1,64 @@
 # SPDX-License-Identifier: MIT
 #
 # The flake's checks: builds of the fixtures from their lockfiles, each
-# output run or inspected, and the behaviour of the Nix library on its own.
-# tests/interactive.sh covers interactive mode and tests/publish.sh the
-# upload, which run Nix and so cannot run in the sandbox.
-{ pkgs, overlay }:
+# output run or inspected, the conformance checks of the purifier contract
+# that run in the sandbox, and the behaviour of the Nix library on its
+# own. The conformance checks that need the network or Nix itself
+# (conformance-relock, conformance-rebuild and conformance-offline) are
+# jobs of the same names in .github/workflows/check.yml.
+{
+  pkgs,
+  overlay,
+  # `lib.rebar3-purifier.buildRebar3Project` of the flake.
+  buildRebar3Project,
+  # The source of the shared purifier library.
+  purifierSrc,
+}:
 let
   extended = pkgs.extend overlay;
-  inherit (extended) lib runCommand buildRebar3Project;
+  inherit (extended) lib runCommand;
+  inherit (extended.rebar3-purifier) cli;
 
   # One application with Hex dependencies and plugins, a git dependency in
   # its test profile, an escript, a release and a Hex package.
   hello = buildRebar3Project {
+    inherit pkgs;
     src = ./fixtures/hello;
-    doCheck = true;
   };
 
   # Two applications under apps/, git dependencies at a tag and in a
   # subdirectory of a repository, a plugin from git, and a release of both.
-  umbrella = buildRebar3Project { src = ./fixtures/umbrella; };
+  umbrella = buildRebar3Project {
+    inherit pkgs;
+    src = ./fixtures/umbrella;
+  };
+
+  # The hello fixture as a build kept external: its tree holds rebar.lock
+  # and no rebar3-purifier lockfile, which lies outside it.
+  without =
+    names:
+    builtins.path {
+      path = ./fixtures/hello;
+      name = "hello-without-${lib.concatStringsSep "-" names}";
+      filter = path: _: !builtins.elem (baseNameOf path) names;
+    };
+  external = buildRebar3Project {
+    inherit pkgs;
+    src = without [ "rebar3-purifier.lock.json" ];
+    lockFile = ./fixtures/hello/rebar3-purifier.lock.json;
+  };
+
+  # The hello fixture without rebar.lock either, which lies outside it
+  # with the lockfile.
+  externalRebarLock = buildRebar3Project {
+    inherit pkgs;
+    src = without [
+      "rebar3-purifier.lock.json"
+      "rebar.lock"
+    ];
+    lockFile = ./fixtures/hello/rebar3-purifier.lock.json;
+    rebarLock = ./fixtures/hello/rebar.lock;
+  };
 
   # Runs a command and compares what it prints.
   prints =
@@ -32,40 +72,106 @@ let
       touch $out
     '';
 
-  lockWithVersion =
-    version:
-    builtins.toFile "rebar3-purifier.lock.json" (
-      builtins.toJSON {
-        inherit version;
-        artifacts = [ ];
-      }
-    );
+  helloLockFile = ./fixtures/hello/rebar3-purifier.lock.json;
+  helloLock = builtins.fromJSON (builtins.readFile helloLockFile);
+  umbrellaLock = builtins.fromJSON (builtins.readFile ./fixtures/umbrella/rebar3-purifier.lock.json);
+  withContentHash = lock: lock // { contentHash = import ../nix/lib/content-hash.nix lock; };
+  lockFileOf = lock: builtins.toFile "rebar3-purifier.lock.json" (builtins.toJSON lock);
+  pathsOf = entries: map (e: e.path) entries;
+
+  # A conformance check that a lockfile which does not fit a fixture fails
+  # twice with an error that matches `pattern`: in `rebar3-purifier check`,
+  # which the build runs before rebar3, and in the evaluation of the
+  # builder, which runs here with Nix in the sandbox and a store that holds
+  # nothing. `setup` changes the copy of the fixture in `project` after
+  # `lockFile` replaced its lockfile.
+  refused =
+    name:
+    {
+      fixture ? ./fixtures/hello,
+      lockFile ? helloLockFile,
+      setup ? "",
+      pattern ? "rebar3-purifier lock",
+    }:
+    let
+      nixLib = "import ${pkgs.path}/lib";
+      expr = ''
+        ((import ${../nix/lib}/build-rebar3-project.nix {
+          lib = ${nixLib};
+          purifier = import ${purifierSrc} { lib = ${nixLib}; };
+        }) { pkgs = null; cli = null; src = /. + "$PWD/project"; }).fetches
+      '';
+    in
+    runCommand "conformance-${name}" { nativeBuildInputs = [ extended.nix ]; } ''
+      cp -r ${fixture} project
+      chmod -R u+w project
+      cp ${lockFile} project/rebar3-purifier.lock.json
+      chmod u+w project/rebar3-purifier.lock.json
+      ${setup}
+      if ${cli}/bin/rebar3-purifier check project project/rebar3-purifier.lock.json 2> command.log; then
+        echo "rebar3-purifier check accepted the lockfile" >&2
+        exit 1
+      fi
+      cat command.log
+      grep -qF ${lib.escapeShellArg pattern} command.log
+      export HOME="$TMPDIR" NIX_STATE_DIR="$TMPDIR/nix/var" NIX_LOG_DIR="$TMPDIR/nix/log"
+      if nix-instantiate --eval --strict --store dummy:// --expr "${expr}" 2> eval.log; then
+        echo "the evaluation of buildRebar3Project accepted the lockfile" >&2
+        exit 1
+      fi
+      cat eval.log
+      grep -qF ${lib.escapeShellArg pattern} eval.log
+      touch $out
+    '';
+
+  readLock = import ../nix/lib/read-lock.nix { inherit lib; };
   readsVersion =
     version:
-    (builtins.tryEval (import ../nix/lib/lock.nix { lockFile = lockWithVersion version; }).artifacts)
-    .success;
+    !builtins.any (lib.hasInfix "lock format version")
+      (readLock {
+        src = ./fixtures/hello;
+        lockFile = lockFileOf (withContentHash (helloLock // { inherit version; }));
+      }).problems;
 in
 {
   fixture-hello-escript =
-    prints "fixture-hello-escript" "${lib.getExe hello.escripts.hello} Nix"
+    prints "fixture-hello-escript" "${lib.getExe hello.packages.escript-hello} Nix"
       ''{"hello":"Nix"}'';
 
   # The release starts, with the ERTS it includes, prints and stops. The
   # start script prints the command it runs first.
   fixture-hello-release = runCommand "fixture-hello-release" { } ''
-    HOME=$TMPDIR HELLO_ONESHOT=1 ${lib.getExe hello.releases.hello} foreground > actual
+    HOME=$TMPDIR HELLO_ONESHOT=1 ${lib.getExe hello.packages.release-hello} foreground > actual
     grep -qx '{"hello":"release"}' actual
     touch $out
   '';
 
   # The application's compiled modules, and the Hex package with its
-  # metadata.
+  # metadata in the `release` that `rebar3-purifier publish` uploads.
   fixture-hello-outputs = runCommand "fixture-hello-outputs" { } ''
-    test -f ${hello.apps.hello}/lib/hello/ebin/hello.beam
-    test -f ${hello.apps.hello}/lib/hello/ebin/hello.app
-    tar -xOf ${hello.hexPackages.hello}/hello-0.1.0.tar metadata.config | grep -q '<<"jsx">>'
+    test -f ${hello.packages.app-hello}/lib/hello/ebin/hello.beam
+    test -f ${hello.packages.app-hello}/lib/hello/ebin/hello.app
+    tar -xOf ${hello.release}/hello-0.1.0.tar metadata.config | grep -q '<<"jsx">>'
     touch $out
   '';
+
+  # The eunit tests of the fixture, with meck from git.
+  fixture-hello-tests = hello.tests;
+
+  # The fetches are the download entries of the build: the Hex packages of
+  # rebar.lock with the outer checksums it records, the plugin tarballs
+  # the lockfile records, and the git checkout of the test profile.
+  fixture-hello-fetches =
+    let
+      jsx = lib.findFirst (e: e.path == "hex/hexpm/packages/jsx-3.1.0.tar") null hello.fetches;
+    in
+    assert jsx.url == "https://repo.hex.pm/tarballs/jsx-3.1.0.tar";
+    # The outer checksum 0C5CC8FD… of jsx 3.1.0 in rebar.lock.
+    assert jsx.hash == "sha256-DFzI/cEbU8wlz2WsZwWtOeVOzFbRwi5K249aU/uUJ/M=";
+    assert !builtins.elem jsx.path (pathsOf helloLock.hexTarballs);
+    assert builtins.elem "hex/hexpm/packages/rebar3_hex-7.4.0.tar" (pathsOf hello.fetches);
+    assert builtins.elem "git/29360b25b708b2dc9d68a4f46f6a1b8b55f72518" (pathsOf hello.fetches);
+    runCommand "fixture-hello-fetches" { } "touch $out";
 
   # The cache tree holds every locked tarball with its etag, the package
   # index, and the repository rebuilt from the git checkout, whose tag
@@ -82,24 +188,95 @@ in
     touch $out
   '';
 
+  # Every output of each fixture, which the conformance-rebuild job builds
+  # a second time.
+  fixture-hello-build = hello.packages.default;
+  fixture-umbrella-build = umbrella.packages.default;
+
   fixture-umbrella-release = runCommand "fixture-umbrella-release" { } ''
-    HOME=$TMPDIR SERVER_ONESHOT=1 ${lib.getExe umbrella.releases.umbrella} foreground > actual
+    HOME=$TMPDIR SERVER_ONESHOT=1 ${lib.getExe umbrella.packages.release-umbrella} foreground > actual
     grep -qx 'Hello, Nix (recon 2.5.6, opentelemetry_api 1.5.0)' actual
     touch $out
   '';
 
   # Each application of the umbrella is an output of its own.
   fixture-umbrella-apps = runCommand "fixture-umbrella-apps" { } ''
-    test -f ${umbrella.apps.greeter}/lib/greeter/ebin/greeter.beam
-    test -f ${umbrella.apps.server}/lib/server/ebin/server_app.beam
+    test -f ${umbrella.packages.app-greeter}/lib/greeter/ebin/greeter.beam
+    test -f ${umbrella.packages.app-server}/lib/server/ebin/server_app.beam
     touch $out
   '';
+
+  # A lockfile older than a file that defines the dependencies.
+  conformance-stale = refused "stale" {
+    setup = "echo '%% a change' >> project/rebar.config";
+  };
+
+  # A lockfile whose recorded download has another hash than the lock
+  # recorded.
+  conformance-tampered = refused "tampered" {
+    lockFile = lockFileOf (
+      helloLock
+      // {
+        hexTarballs = map (
+          t: t // { hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; }
+        ) helloLock.hexTarballs;
+      }
+    );
+  };
+
+  # A lockfile without the checkout of a git dependency in rebar.lock,
+  # with a contentHash that matches it.
+  conformance-missing = refused "missing" {
+    fixture = ./fixtures/umbrella;
+    lockFile = lockFileOf (
+      withContentHash (
+        umbrellaLock
+        // {
+          git = builtins.filter (g: g.rev != "c2a76855be3a226a3148c0dfc21ce000b6186ef8") umbrellaLock.git;
+        }
+      )
+    );
+  };
+
+  # A lockfile that is not valid JSON.
+  conformance-malformed = refused "malformed" {
+    setup = "head -c 200 ${helloLockFile} > project/rebar3-purifier.lock.json";
+  };
+
+  # A build whose `src` holds no rebar3-purifier lockfile, from the
+  # lockfile kept outside it.
+  conformance-external =
+    prints "conformance-external" "${lib.getExe external.packages.escript-hello} Nix"
+      ''{"hello":"Nix"}'';
+
+  # A build whose `src` holds no rebar.lock either, from the rebar.lock
+  # passed as `rebarLock`.
+  fixture-hello-rebar-lock =
+    prints "fixture-hello-rebar-lock" "${lib.getExe externalRebarLock.packages.escript-hello} Nix"
+      ''{"hello":"Nix"}'';
+
+  # readLock gives the lock in the shape of the purifier contract, with the
+  # outputs under the names of the packages.
+  fixture-hello-read-lock =
+    let
+      lock = readLock { src = ./fixtures/hello; };
+    in
+    assert lock.purifier == "rebar3-purifier";
+    assert lock.problems == [ ];
+    assert
+      builtins.attrNames lock.outputs == [
+        "app-hello"
+        "escript-hello"
+        "hex-hello"
+        "release-hello"
+      ];
+    runCommand "fixture-hello-read-lock" { } "touch $out";
 
   # The rebar3-purifier command, with its unit tests run in the build, and
   # the toolchain around it.
   inherit (extended.rebar3-purifier) cli toolchain;
 
-  # lock.nix reads the version it supports and rejects any other.
+  # readLock reads the version it supports and rejects any other.
   lock-version =
     assert readsVersion (import ../nix/lib/lock-version.nix);
     assert !(readsVersion 0);

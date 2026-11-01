@@ -8,21 +8,29 @@
 -export([main/1]).
 
 usage() ->
-    "usage: rebar3-purifier <command> [arguments]\n"
+    "usage: rebar3-purifier <command> [--lockfile PATH] [arguments]\n"
     "\n"
-    "  lock [--profile P]...   lock the build in the current directory, when\n"
-    "                          a file that defines its dependencies changed\n"
-    "  relock [--profile P]... lock it regardless\n"
-    "  env                     print the environment that points rebar3 at\n"
-    "                          the locked downloads (used by the rebar3\n"
-    "                          wrapper)\n"
-    "  publish [APP]...        publish the Hex packages Nix built\n"
-    "  build-cache             the builder of the cache tree (in Nix)\n"
+    "  lock [--profile P]...   run rebar3 with empty caches and record its downloads\n"
+    "                          in rebar3-purifier.lock.json, keeping rebar.lock\n"
+    "  update [--profile P]... [PACKAGE]...\n"
+    "                          upgrade every dependency in rebar.lock, or the\n"
+    "                          named ones, then lock\n"
+    "  prefetch                fetch the locked downloads and keep them and the\n"
+    "                          toolchain alive, for work without the network\n"
+    "  publish [--dry-run] [APP]...\n"
+    "                          publish the Hex packages Nix built\n"
+    "\n"
+    "  --lockfile PATH names a lockfile outside the project, with its rebar.lock\n"
+    "  beside it.\n"
+    "\n"
+    "Used by the toolchain and the Nix build:\n"
+    "  env                     print the environment that points rebar3 at the\n"
+    "                          locked downloads\n"
+    "  build-cache             build the cache tree\n"
     "  check DIR LOCKFILE      check that the lockfile fits the build in DIR\n"
-    "                          (in Nix, before rebar3 runs)\n"
     "  pin-versions DIR LOCKFILE\n"
     "                          write the versions the lock run recorded into\n"
-    "                          applications whose version comes from git (in Nix)\n"
+    "                          applications whose version comes from git\n"
     "  index DIR               write the package index and etags of the Hex\n"
     "                          tarballs under DIR/hex\n".
 
@@ -39,13 +47,15 @@ main(Args) ->
     erlang:halt(Code).
 
 run(["lock" | Rest]) ->
-    rp_lock:lock(Rest, false);
-run(["relock" | Rest]) ->
-    rp_lock:lock(Rest, true);
-run(["env"]) ->
-    rp_wrapper:env();
+    rp_lock:lock(Rest);
+run(["update" | Rest]) ->
+    rp_lock:update(Rest);
+run(["prefetch" | Rest]) ->
+    rp_wrapper:prefetch(Rest);
 run(["publish" | Rest]) ->
     rp_publish:publish(Rest);
+run(["env"]) ->
+    rp_wrapper:env();
 run(["build-cache"]) ->
     rp_index:build_cache();
 run(["index", Dir]) ->

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 #
-# The cache tree of a lockfile. Hex tarballs are under
+# The cache tree of a lock. Hex tarballs are under
 # hex/<repository>/packages/, where rebar3 keeps them in its cache
 # directory, as links into the store, with the package index and the etags
 # beside them. Each git dependency is a bare repository under git/<commit>,
@@ -10,25 +10,28 @@
 {
   lib,
   pkgs,
-  runCommand,
-  fetchurl,
-  fetchgit,
-  lockFile,
-  # The rebar3-purifier package.
-  cli,
   # The shared purifier library (`lib.purifier` of its flake).
   purifier,
+  # Fetchers that replace the nixpkgs fetchers of the same names in the
+  # fetchEntry of the purifier library.
+  fetchers ? { },
+  # The download entries of one system, from entriesFor of the purifier
+  # library.
+  entries,
+  # The rebar3-purifier package.
+  cli,
 }:
 let
-  lock = import ./lock.nix { inherit lockFile; };
-  fetch = purifier.fetchEntry { inherit pkgs fetchurl fetchgit; };
+  fetch = purifier.fetchEntry ({ inherit pkgs; } // fetchers);
 in
-runCommand "rebar3-purifier-cache"
+pkgs.runCommand "rebar3-purifier-cache"
   {
-    manifest = lib.concatMapStrings (a: "${a.path}\t${fetch a}\n") lock.artifacts;
-    passAsFile = [ "manifest" ];
-    inherit lockFile;
-    passthru = { inherit lock; };
+    manifest = lib.concatMapStrings (e: "${e.path}\t${fetch e}\n") entries;
+    entries = builtins.toJSON entries;
+    passAsFile = [
+      "manifest"
+      "entries"
+    ];
   }
   ''
     ${cli}/bin/rebar3-purifier build-cache
