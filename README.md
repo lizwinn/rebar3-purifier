@@ -36,7 +36,7 @@ For persistent use, add these packages through your usual Nix configuration.
 
 ## Development loop
 
-`nix develop github:nix-purifiers/rebar3-purifier` gives a shell with
+`nix shell 'github:nix-purifiers/rebar3-purifier'` gives a shell with
 `rebar3`, the Erlang tools, `elp` and `rebar3-purifier`. Run rebar3 as
 usual: `rebar3 compile`, `rebar3 eunit`, `rebar3 ct`, `rebar3 shell`,
 `rebar3 release`. In a project with a lockfile, `rebar3` first builds the
@@ -201,7 +201,7 @@ off.
 The toolchain has `elp`, the
 [Erlang Language Platform](https://whatsapp.github.io/erlang-language-platform/),
 which loads the project by running rebar3. Run your editor inside
-`nix develop`, or put the toolchain on its `PATH`, and `elp` finds the
+`nix shell`, or put the toolchain on its `PATH`, and `elp` finds the
 rebar3 of the toolchain, which reads the locked downloads. After a
 prefetch the editor needs no network.
 
