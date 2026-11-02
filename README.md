@@ -7,30 +7,12 @@ optional next step.
 
 It supports x86_64-linux and aarch64-linux.
 
-## Installation
-
-Install the integration into your Nix profile once:
-
-```sh
-nix profile install 'github:nix-purifiers/rebar3-purifier'
-```
-
-This installs the `rebar3` wrapper. Use it for the locked
-development workflow below. With no purifier lockfile, it warns on standard
-error and runs the ordinary tool with impure resolution.
-
-`nix shell` makes an integration available temporarily instead of installing
-it. Keep using the activation steps below where a project environment or
-prefetched cache is required.
-
 ## Quickstart
 
-Install Nix, then run the following from your existing project's root.
-The setup prepares the locked dependencies and the integration that
-rebar3's normal commands use:
+From the project root:
 
 ```zsh
-nix develop github:nix-purifiers/rebar3-purifier
+nix shell 'github:nix-purifiers/rebar3-purifier'
 rebar3-purifier lock
 rebar3 compile
 rebar3 eunit
@@ -44,6 +26,13 @@ No project Nix files are needed for this workflow.
 
 Sandboxed builds of the whole project are an optional
 [next step](#building-the-project-with-nix).
+
+The shell provides the `rebar3` wrapper. Use it for the locked
+development workflow. With no purifier lockfile, it warns on standard
+error and runs the ordinary tool with impure resolution.
+
+For persistent use, add these packages through your usual Nix configuration.
+
 
 ## Development loop
 
