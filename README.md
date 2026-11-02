@@ -92,7 +92,8 @@ repository of the project or in another one:
 
 ```nix
 {
-  inputs.rebar3-purifier.url = "github:nix-purifiers/rebar3-purifier";
+  inputs.rebar3-purifier.url =
+    "github:nix-purifiers/rebar3-purifier";
   inputs.nixpkgs.follows = "rebar3-purifier/nixpkgs";
 
   outputs =
@@ -103,12 +104,14 @@ repository of the project or in another one:
         inherit system;
         overlays = [ rebar3-purifier.overlays.default ];
       };
-      project = pkgs.rebar3-purifier.buildRebar3Project {
+      project =
+        pkgs.rebar3-purifier.buildRebar3Project {
         src = ./.;
       };
     in
     {
-      packages.${system}.default = project.packages.release-my_app;
+      packages.${system}.default =
+        project.packages.release-my_app;
       checks.${system}.tests = project.tests;
     };
 }
