@@ -106,14 +106,17 @@ repository of the project or in another one:
   inputs.rebar3-purifier.url = "github:nix-purifiers/rebar3-purifier";
   inputs.nixpkgs.follows = "rebar3-purifier/nixpkgs";
 
-  outputs = { nixpkgs, rebar3-purifier, ... }:
+  outputs =
+    { nixpkgs, rebar3-purifier, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
         inherit system;
         overlays = [ rebar3-purifier.overlays.default ];
       };
-      project = pkgs.rebar3-purifier.buildRebar3Project { src = ./.; };
+      project = pkgs.rebar3-purifier.buildRebar3Project {
+        src = ./.;
+      };
     in
     {
       packages.${system}.default = project.packages.release-my_app;
@@ -175,15 +178,15 @@ For an ad hoc build, the builder can also be evaluated directly from the
 project root. Replace the example package name with one from your project:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.rebar3-purifier.buildRebar3Project { src = ./.; }).packages.default'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.rebar3-purifier.buildRebar3Project { src = ./.; })
+.packages.default'
 ```
 
 This uses the purifier's pinned nixpkgs, matching the lock command above.
@@ -304,15 +307,15 @@ and build it from the checkout:
 git clone https://github.com/erlang-ls/erlang_ls
 cd erlang_ls
 nix run github:nix-purifiers/rebar3-purifier -- lock
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.rebar3-purifier.buildRebar3Project { src = ./.; }).packages.escript-erlang_ls'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.rebar3-purifier.buildRebar3Project { src = ./.; })
+.packages.escript-erlang_ls'
 ./result/bin/erlang_ls --version
 ```
 
