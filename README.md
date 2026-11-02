@@ -293,9 +293,10 @@ for Erlang, built as an escript. To build it with Nix, clone it, lock it,
 and build it from the checkout:
 
 ```zsh
+nix shell 'github:nix-purifiers/rebar3-purifier'
 git clone https://github.com/erlang-ls/erlang_ls
 cd erlang_ls
-nix run github:nix-purifiers/rebar3-purifier -- lock
+rebar3-purifier lock
 nix build --impure --expr 'let
   purifier = builtins.getFlake "github:nix-purifiers/rebar3-purifier";
   pkgs = import purifier.inputs.nixpkgs {
