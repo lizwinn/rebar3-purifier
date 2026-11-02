@@ -5,10 +5,7 @@ Nix-resolved dependencies. Use the normal build and test commands in your
 working tree; building the project itself in the Nix sandbox is an
 optional next step.
 
-It follows the [purifier contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
-
-rebar3-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io),
-which share one interface. It supports x86_64-linux and aarch64-linux.
+It supports x86_64-linux and aarch64-linux.
 
 ## Installation
 
