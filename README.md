@@ -337,13 +337,7 @@ flake.
 
 ## Credits
 
-The design follows
-[sbt-nix-backend](https://github.com/clhodapp/sbt-nix-backend), the first
-of the nix-purifiers: the tool keeps planning the build, a lock run with
-empty caches records what the tool downloads, Nix builds from the lockfile,
-and the everyday tool reads the same locked downloads. The idea was inspired
-by the [cargo (libnix)](https://github.com/nixcloud/cargo) project of
-nixcloud. The shared library comes from
-[nix-purifiers/purifier](https://github.com/nix-purifiers/purifier).
-`docs/development` describes the code for contributors.
-rebar3-purifier is released under the MIT license.
+The purifier idea was inspired by nixcloud's
+[cargo (libnix)](https://github.com/nixcloud/cargo).
+
+Released under the MIT license; see [LICENSE](LICENSE).
